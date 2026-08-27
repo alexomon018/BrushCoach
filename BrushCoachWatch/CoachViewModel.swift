@@ -9,6 +9,7 @@ final class CoachViewModel {
     struct SessionSummary: Equatable {
         var session: BrushSession
         var nextSteps: [String]
+        var capability: SensingCapability
     }
 
     enum Phase: Equatable {
@@ -24,14 +25,32 @@ final class CoachViewModel {
     private(set) var elapsed: TimeInterval = 0
     private(set) var currentZoneIndex = 0
 
+    /// What motion analysis is seeing right now, or `nil` when it is not running.
+    private(set) var liveActivity: MotionActivity?
+    private(set) var liveBrushingSeconds: TimeInterval = 0
+
     @ObservationIgnored private let runtime = ExtendedRuntimeController()
+    @ObservationIgnored private let recorder = WatchMotionRecorder()
     @ObservationIgnored private var workTask: Task<Void, Never>?
+    @ObservationIgnored private var motionTask: Task<Void, Never>?
+    @ObservationIgnored private var analyzer = LiveSessionAnalyzer()
+    @ObservationIgnored private var didSenseMotion = false
+    @ObservationIgnored private var lastStrokeRateNudge: Date?
     @ObservationIgnored private let timeline = RoutineTimeline()
     /// Elapsed time is derived from wall-clock instants, never accumulated from
     /// ticks, so a suspended process cannot make the session drift. See
     /// `SessionClockTests` for the properties this relies on.
     @ObservationIgnored private lazy var clock = SessionClock(limit: timeline.totalDuration)
     @ObservationIgnored private var sessionStartedAt: Date?
+
+    /// Resolved fresh each time: the user can move the Watch to the other wrist
+    /// or change their answer between sessions.
+    var capability: SensingCapability {
+        HandednessProfile(
+            watchWrist: WKInterfaceDevice.current().wristLocation == .left ? .left : .right,
+            brushingHand: WatchRoutinePreferences.current.brushingHand
+        ).capability
+    }
 
     var isBusy: Bool {
         switch phase {
@@ -68,6 +87,7 @@ final class CoachViewModel {
                 phase = .failed(error.localizedDescription)
                 WKInterfaceDevice.current().play(.failure)
             }
+            stopMotionAnalysis()
             runtime.end()
             workTask = nil
         }
@@ -100,6 +120,7 @@ final class CoachViewModel {
         clock.stop(at: now)
         let banked = clock.elapsed(at: now)
         workTask?.cancel()
+        stopMotionAnalysis()
         runtime.end()
 
         let snapshot = timeline.snapshot(elapsed: banked)
@@ -107,24 +128,17 @@ final class CoachViewModel {
             reset()
             return
         }
-        let session = BrushSession(
+        finish(
             startedAt: startedAt,
-            endedAt: startedAt.addingTimeInterval(banked),
             duration: banked,
-            zonesCompleted: snapshot.zonesCompleted,
-            plannedZones: timeline.plan.zones.count,
-            source: .watch
+            zonesCompleted: snapshot.zonesCompleted
         )
-        try? WatchSessionStore.upsert(session)
-        WatchTraceTransfer.shared.enqueue(session)
-        phase = .completed(SessionSummary(session: session, nextSteps: pendingSteps()))
-        WKInterfaceDevice.current().play(.success)
-        clearRunState()
     }
 
     /// Abandons the session without recording anything.
     func discard() {
         workTask?.cancel()
+        stopMotionAnalysis()
         runtime.end()
         reset()
     }
@@ -139,6 +153,11 @@ final class CoachViewModel {
         currentZoneIndex = 0
         clock.reset()
         sessionStartedAt = nil
+        liveActivity = nil
+        liveBrushingSeconds = 0
+        didSenseMotion = false
+        lastStrokeRateNudge = nil
+        analyzer.reset()
     }
 
     private func pendingSteps() -> [String] {
@@ -167,6 +186,7 @@ final class CoachViewModel {
         clock.start(at: startedAt)
         phase = .brushing
         WKInterfaceDevice.current().play(.start)
+        startMotionAnalysis()
 
         while true {
             try Task.checkCancellation()
@@ -188,22 +208,92 @@ final class CoachViewModel {
             try await Task.sleep(for: .milliseconds(250))
         }
 
+        stopMotionAnalysis()
         let zones = timeline.plan.zones.count
+        finish(
+            startedAt: startedAt,
+            duration: timeline.totalDuration,
+            zonesCompleted: zones
+        )
+    }
+
+    /// Builds and stores the finished session. Pacer facts and analysis facts are
+    /// assembled in one place so it stays obvious that the former never depend
+    /// on the latter.
+    private func finish(startedAt: Date, duration: TimeInterval, zonesCompleted: Int) {
         let session = BrushSession(
             startedAt: startedAt,
-            endedAt: startedAt.addingTimeInterval(timeline.totalDuration),
-            duration: timeline.totalDuration,
-            zonesCompleted: zones,
-            plannedZones: zones,
+            endedAt: startedAt.addingTimeInterval(duration),
+            duration: duration,
+            zonesCompleted: zonesCompleted,
+            plannedZones: timeline.plan.zones.count,
+            analysis: didSenseMotion ? analyzer.currentAnalysis : nil,
             source: .watch
         )
-        try WatchSessionStore.upsert(session)
+        try? WatchSessionStore.upsert(session)
         WatchTraceTransfer.shared.enqueue(session)
-        phase = .completed(SessionSummary(session: session, nextSteps: pendingSteps()))
+        phase = .completed(
+            SessionSummary(session: session, nextSteps: pendingSteps(), capability: capability)
+        )
         WKInterfaceDevice.current().play(.success)
         clearRunState()
     }
 
+    // MARK: - Motion analysis
+
+    /// Runs the recorder beside the pacer rather than driving it. The pacer stays
+    /// pure wall-clock, so a sensing failure can slow nothing down and stop
+    /// nothing — it only means the summary has less to say.
+    private func startMotionAnalysis() {
+        guard capability.canSenseMotion, motionTask == nil else { return }
+        analyzer.reset()
+
+        motionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // A hard ceiling well past the routine, so an abandoned session can
+            // never leave device motion running.
+            let ceiling = timeline.totalDuration + 60
+            _ = try? await recorder.recordUntilStopped(maxDuration: ceiling) { [weak self] sample, _ in
+                guard let self else { return true }
+                didSenseMotion = true
+                for insight in analyzer.ingest(sample) {
+                    handle(insight)
+                }
+                liveActivity = analyzer.currentActivity
+                liveBrushingSeconds = analyzer.currentAnalysis.activeBrushingSeconds
+                return false
+            }
+        }
+    }
+
+    private func stopMotionAnalysis() {
+        guard motionTask != nil else { return }
+        motionTask?.cancel()
+        motionTask = nil
+        recorder.cancel()
+        liveActivity = nil
+    }
+
+    private func handle(_ insight: SessionInsight) {
+        switch insight {
+        case .strokeRateHigh(let rate):
+            nudgeForFastStrokes(rate: rate)
+        case .heldOnePositionTooLong:
+            // The wrist is moving and usually out of sight; this has to be felt.
+            WKInterfaceDevice.current().play(.retry)
+        case .activityChanged, .positionChanged:
+            break
+        }
+    }
+
+    /// Throttled hard. A fast-stroke window recurs every second while the user is
+    /// scrubbing, and a haptic every second is noise the user learns to ignore.
+    private func nudgeForFastStrokes(rate: Double) {
+        let now = Date.now
+        if let last = lastStrokeRateNudge, now.timeIntervalSince(last) < 15 { return }
+        lastStrokeRateNudge = now
+        WKInterfaceDevice.current().play(.directionDown)
+    }
 
     private func updateSummary(_ update: (inout BrushSession) -> Void) {
         guard case .completed(var summary) = phase else { return }

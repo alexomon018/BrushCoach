@@ -1,6 +1,7 @@
 @preconcurrency import WatchConnectivity
 import BrushKit
 import Foundation
+import WatchKit
 
 final class WatchTraceTransfer: NSObject, WCSessionDelegate, @unchecked Sendable {
     static let shared = WatchTraceTransfer()
@@ -33,6 +34,18 @@ final class WatchTraceTransfer: NSObject, WCSessionDelegate, @unchecked Sendable
         error: (any Error)?
     ) {
         flushIfReady()
+        reportWristLocation()
+    }
+
+    /// Only the Watch can read which wrist it is on, and the iPhone needs it to
+    /// explain honestly whether stroke checking can work. Sent on every
+    /// activation because the user can move the Watch to the other wrist.
+    func reportWristLocation() {
+        Task { @MainActor in
+            guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
+            let wrist: WatchWrist = WKInterfaceDevice.current().wristLocation == .left ? .left : .right
+            WCSession.default.transferUserInfo(["kind": "watch-wrist", "wrist": wrist.rawValue])
+        }
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {

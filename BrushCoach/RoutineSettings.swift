@@ -11,7 +11,25 @@ final class RoutineSettings {
         didSet { persistAndApply() }
     }
 
+    /// Reported by the Watch, which is the only device that can read it.
+    /// `nil` until a paired Watch has connected at least once.
+    var watchWrist: WatchWrist? {
+        didSet {
+            UserDefaults.standard.set(watchWrist?.rawValue, forKey: wristKey)
+        }
+    }
+
+    /// What the iPhone can honestly say about stroke checking, combining the
+    /// Watch's own wrist reading with the hand the user told us about.
+    var sensingCapability: SensingCapability {
+        HandednessProfile(
+            watchWrist: watchWrist,
+            brushingHand: preferences.brushingHand
+        ).capability
+    }
+
     private let key = "routine-preferences-v1"
+    private let wristKey = "watch-wrist-v1"
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: key),
@@ -20,6 +38,7 @@ final class RoutineSettings {
         } else {
             preferences = RoutinePreferences()
         }
+        watchWrist = UserDefaults.standard.string(forKey: wristKey).flatMap(WatchWrist.init(rawValue:))
     }
 
     func apply() async {

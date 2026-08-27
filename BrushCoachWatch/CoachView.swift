@@ -207,13 +207,25 @@ private struct ActiveBrushView: View {
         .tint(tint)
     }
 
+    /// The screen is barely looked at mid-session, so this line stays quiet and
+    /// never scolds. Idle is stated as a fact, not an accusation, and the timer
+    /// keeps running either way.
     private var hint: some View {
-        let text: String = model.isPaused
-            ? "Timer held · nothing lost"
-            : "45° to the gumline · gentle strokes"
+        let text: String
+        let tint: Color
+        if model.isPaused {
+            text = "Timer held · nothing lost"
+            tint = .watchBlue
+        } else if model.liveActivity == .idle {
+            text = "Not brushing right now"
+            tint = .watchCoral
+        } else {
+            text = "45° to the gumline · gentle strokes"
+            tint = .watchBlue
+        }
         return Text(text)
             .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(Color.watchBlue)
+            .foregroundStyle(tint)
             .lineLimit(1)
     }
 }
@@ -240,9 +252,20 @@ private struct CompletionView: View {
             Text(summary.session.completedRoutine ? "Clean sweep" : "Partly done")
                 .font(.system(.headline, design: .rounded, weight: .bold))
 
-            HStack(spacing: 16) {
+            HStack(spacing: compact ? 11 : 16) {
                 metric(formattedDuration, "TIME")
                 metric("\(summary.session.zonesCompleted)/\(summary.session.plannedZones)", "ZONES")
+                if let brushed = formattedBrushingTime {
+                    metric(brushed, "BRUSHED")
+                }
+            }
+
+            if let note = sensingNote {
+                Text(note)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.watchBlue)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
 
             if let step = nextPendingStep {
@@ -267,6 +290,28 @@ private struct CompletionView: View {
 
     private var formattedDuration: String {
         Duration.seconds(summary.session.duration).formatted(.time(pattern: .minuteSecond))
+    }
+
+    /// Only shown when analysis actually produced a usable reading. An
+    /// inconclusive session must not render as "0:00 brushed".
+    private var formattedBrushingTime: String? {
+        guard let seconds = summary.session.activeBrushingSeconds else { return nil }
+        return Duration.seconds(seconds.rounded()).formatted(.time(pattern: .minuteSecond))
+    }
+
+    /// Explains a missing brushing time rather than leaving a silent gap.
+    private var sensingNote: String? {
+        guard formattedBrushingTime == nil else { return nil }
+        switch summary.capability {
+        case .available:
+            return summary.session.analysis == nil
+                ? nil
+                : "Not enough motion to check your strokes this time."
+        case .wrongWrist:
+            return "Watch is on your other wrist, so strokes weren't checked."
+        case .unknown:
+            return "Set your brushing hand in the iPhone app to check strokes."
+        }
     }
 
     private var nextPendingStep: String? {

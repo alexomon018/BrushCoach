@@ -37,12 +37,21 @@ final class PhoneTraceReceiver: NSObject, WCSessionDelegate, @unchecked Sendable
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        guard userInfo["kind"] as? String == "completed-session",
-              let data = userInfo["session"] as? Data,
-              let brushSession = try? JSONDecoder().decode(BrushSession.self, from: data)
-        else { return }
-        Task { @MainActor in
-            SessionStore.shared.importFromWatch(brushSession)
+        switch userInfo["kind"] as? String {
+        case "completed-session":
+            guard let data = userInfo["session"] as? Data,
+                  let brushSession = try? JSONDecoder().decode(BrushSession.self, from: data)
+            else { return }
+            Task { @MainActor in
+                SessionStore.shared.importFromWatch(brushSession)
+            }
+        case "watch-wrist":
+            guard let raw = userInfo["wrist"] as? String, let wrist = WatchWrist(rawValue: raw) else { return }
+            Task { @MainActor in
+                RoutineSettings.shared.watchWrist = wrist
+            }
+        default:
+            return
         }
     }
 

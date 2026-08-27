@@ -10,8 +10,19 @@ struct BrushReplayCommand {
             return
         }
 
+        let paths = arguments.filter { !$0.hasPrefix("--") }
+        guard !paths.isEmpty else {
+            printUsage()
+            return
+        }
+
+        if arguments.contains("--separability") {
+            try separability(paths: paths)
+            return
+        }
+
         var hadFailure = false
-        for path in arguments where !path.hasPrefix("--") {
+        for path in paths {
             do {
                 try replay(path: path)
             } catch {
@@ -22,9 +33,11 @@ struct BrushReplayCommand {
         if hadFailure { throw Exit.failure }
     }
 
+    // MARK: - Replay
+
     private static func replay(path: String) throws {
         let url = URL(fileURLWithPath: path)
-        let trace = try TraceJSON.decoder().decode(LabelledMotionTrace.self, from: Data(contentsOf: url))
+        let trace = try load(url)
 
         var pipeline = MotionPipeline()
         let windows = pipeline.process(trace.samples)
@@ -32,6 +45,10 @@ struct BrushReplayCommand {
         let plan = SessionPlan(zones: [.upperRight, .upperCentre, .upperLeft, .lowerLeft, .lowerCentre, .lowerRight], secondsPerZone: 20)
         var engine = SessionEngine(configuration: SessionEngineConfiguration(plan: plan))
         let events = engine.ingest(trace.samples)
+
+        var analyzer = LiveSessionAnalyzer()
+        _ = analyzer.ingest(trace.samples)
+        let analysis = analyzer.currentAnalysis
 
         print("\(url.lastPathComponent)")
         print("  label: \(trace.metadata.label.displayName)")
@@ -46,18 +63,166 @@ struct BrushReplayCommand {
             if case .windowClassified = event { count + 1 } else { count }
         }
         print("  engine: \(events.count) events (\(classifications) classified windows)")
+        print("  analysis: \(format(analysis.activeBrushingSeconds)) s active, \(analysis.positionChanges) position changes, median \(format(analysis.medianStrokeRatePerMinute)) strokes/min")
     }
 
-    private static func format(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(2)))
+    // MARK: - Separability
+
+    /// Answers the one question that decides whether the verification tier is
+    /// real: on your own recorded traces, does idle separate from brushing?
+    ///
+    /// Everything downstream — real brushing time, stroke coaching, the paid
+    /// tier — rests on this. It is deliberately reported as measured numbers and
+    /// a best achievable threshold rather than a pass/fail, because the answer
+    /// is a distribution, not a verdict.
+    private static func separability(paths: [String]) throws {
+        var idle: [Scored] = []
+        var brushing: [Scored] = []
+        var transition: [Scored] = []
+        var skipped = 0
+
+        let detector = ActivityDetector()
+
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            guard let trace = try? load(url) else {
+                skipped += 1
+                FileHandle.standardError.write(Data("brush-replay: skipped unreadable \(url.lastPathComponent)\n".utf8))
+                continue
+            }
+            var pipeline = MotionPipeline()
+            let windows = pipeline.process(trace.samples)
+            let scored = windows.map { window -> Scored in
+                let score = detector.score(window)
+                return Scored(energy: score.energy, strokeRate: score.strokeRatePerMinute, isRhythmic: score.isRhythmic)
+            }
+
+            switch trace.metadata.label {
+            case .idle: idle += scored
+            case .transition: transition += scored
+            default: brushing += scored
+            }
+        }
+
+        print("Separability report")
+        print("  traces read: \(paths.count - skipped)\(skipped > 0 ? " (\(skipped) skipped)" : "")")
+        print("")
+
+        guard !idle.isEmpty, !brushing.isEmpty else {
+            print("  Not enough labelled data. Record traces labelled Idle *and* at least one")
+            print("  mouth zone, then run this again. Zone labels all count as brushing here.")
+            return
+        }
+
+        report("idle", idle)
+        report("brushing", brushing)
+        if !transition.isEmpty { report("transition", transition) }
+        print("")
+
+        let best = bestThreshold(idle: idle.map(\.energy), brushing: brushing.map(\.energy))
+        let shipped = ActivityDetectorConfiguration()
+        let shippedAccuracy = accuracy(
+            threshold: shipped.enterBrushingEnergy,
+            idle: idle.map(\.energy),
+            brushing: brushing.map(\.energy)
+        )
+
+        print("  Energy threshold")
+        print("    best separating value: \(format(best.threshold, places: 4)) → \(percent(best.accuracy)) of windows correct")
+        print("    shipped default (\(format(shipped.enterBrushingEnergy, places: 4))): \(percent(shippedAccuracy)) correct")
+        print("")
+        print("  Rhythm gate (\(format(shipped.minimumStrokeFrequencyHz))–\(format(shipped.maximumStrokeFrequencyHz)) Hz)")
+        print("    brushing windows judged rhythmic: \(percent(fraction(brushing, \.isRhythmic)))")
+        print("    idle windows judged rhythmic:     \(percent(fraction(idle, \.isRhythmic)))")
+        print("")
+
+        let verdict: String
+        if best.accuracy >= 0.9 {
+            verdict = "Strong. Brushing time is worth shipping; consider tuning the default to the best value above."
+        } else if best.accuracy >= 0.75 {
+            verdict = "Workable but noisy. Ship it only with visible uncertainty, and record more varied traces first."
+        } else {
+            verdict = "Weak. Do not ship a verification tier on this data. Record more traces, and check the Watch was on the brushing hand."
+        }
+        print("  Verdict: \(verdict)")
+    }
+
+    private struct Scored {
+        let energy: Double
+        let strokeRate: Double
+        let isRhythmic: Bool
+    }
+
+    private static func report(_ name: String, _ values: [Scored]) {
+        let energies = values.map(\.energy).sorted()
+        print("  \(name): \(values.count) windows")
+        print("    energy   median \(format(percentile(energies, 0.5), places: 4))   p10 \(format(percentile(energies, 0.1), places: 4))   p90 \(format(percentile(energies, 0.9), places: 4))")
+        let rates = values.filter(\.isRhythmic).map(\.strokeRate).sorted()
+        if rates.isEmpty {
+            print("    strokes  no rhythmic windows")
+        } else {
+            print("    strokes  median \(format(percentile(rates, 0.5))) /min")
+        }
+    }
+
+    /// Sweeps every midpoint between observed values and keeps the split that
+    /// classifies the most windows correctly.
+    private static func bestThreshold(idle: [Double], brushing: [Double]) -> (threshold: Double, accuracy: Double) {
+        let candidates = Set(idle + brushing).sorted()
+        var best = (threshold: 0.0, accuracy: 0.0)
+        for (index, value) in candidates.enumerated() {
+            let next = index + 1 < candidates.count ? candidates[index + 1] : value
+            let threshold = (value + next) / 2
+            let score = accuracy(threshold: threshold, idle: idle, brushing: brushing)
+            if score > best.accuracy { best = (threshold, score) }
+        }
+        return best
+    }
+
+    private static func accuracy(threshold: Double, idle: [Double], brushing: [Double]) -> Double {
+        let correct = idle.filter { $0 < threshold }.count + brushing.filter { $0 >= threshold }.count
+        let total = idle.count + brushing.count
+        return total == 0 ? 0 : Double(correct) / Double(total)
+    }
+
+    private static func fraction(_ values: [Scored], _ keyPath: KeyPath<Scored, Bool>) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return Double(values.filter { $0[keyPath: keyPath] }.count) / Double(values.count)
+    }
+
+    private static func percentile(_ sorted: [Double], _ fraction: Double) -> Double {
+        guard !sorted.isEmpty else { return 0 }
+        let index = Int((Double(sorted.count - 1) * fraction).rounded())
+        return sorted[min(sorted.count - 1, max(0, index))]
+    }
+
+    // MARK: - Helpers
+
+    private static func load(_ url: URL) throws -> LabelledMotionTrace {
+        try TraceJSON.decoder().decode(LabelledMotionTrace.self, from: Data(contentsOf: url))
+    }
+
+    private static func format(_ value: Double, places: Int = 2) -> String {
+        value.formatted(.number.precision(.fractionLength(places)))
+    }
+
+    private static func percent(_ value: Double) -> String {
+        (value * 100).formatted(.number.precision(.fractionLength(1))) + "%"
     }
 
     private static func printUsage() {
         print("""
-        Usage: brush-replay TRACE.json [TRACE.json ...]
+        Usage: brush-replay [--separability] TRACE.json [TRACE.json ...]
 
         Replays labelled watch traces through BrushKit's timestamp-aware 50 Hz
-        MotionPipeline and pure SessionEngine. No trace data leaves this machine.
+        MotionPipeline, SessionEngine, and LiveSessionAnalyzer.
+
+          --separability   Pool the traces by label and report whether idle
+                           separates from brushing, the best achievable energy
+                           threshold, and how the shipped default compares.
+                           Needs traces labelled Idle and at least one zone.
+
+        No trace data leaves this machine.
         """)
     }
 

@@ -50,11 +50,17 @@ struct RoutineView: View {
                     dayEndCard
                         .staggeredReveal(index: 7)
 
-                    CompanionSectionHeader(title: "CONNECTIONS", detail: "Keep the routine available across your devices.")
+                    CompanionSectionHeader(title: "STROKE CHECKING", detail: "BrushCoach can only read brushing from the hand that holds the brush.")
                         .staggeredReveal(index: 8)
 
-                    connectionsCard
+                    strokeCheckingCard
                         .staggeredReveal(index: 9)
+
+                    CompanionSectionHeader(title: "CONNECTIONS", detail: "Keep the routine available across your devices.")
+                        .staggeredReveal(index: 10)
+
+                    connectionsCard
+                        .staggeredReveal(index: 11)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
@@ -66,6 +72,69 @@ struct RoutineView: View {
         }
         .sensoryFeedback(.success, trigger: successFeedback)
         .sensoryFeedback(.error, trigger: errorFeedback)
+    }
+
+    /// States the capability plainly, including when it is absent. Telling
+    /// someone their strokes cannot be read is far better than reporting that
+    /// they did not brush.
+    private var strokeCheckingCard: some View {
+        let capability = settings.sensingCapability
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: capability.canSenseMotion ? "checkmark.seal.fill" : "info.circle.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(capability.canSenseMotion ? Color.mintDeep : Color.rinseBlue)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        (capability.canSenseMotion ? Color.mintDeep : Color.rinseBlue).opacity(0.12),
+                        in: Circle()
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(capability.shortLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.deepInk)
+                    Text(capability.explanation)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 9) {
+                Text("BRUSHING HAND")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.1)
+                    .foregroundStyle(.secondary)
+                Picker("Brushing hand", selection: brushingHand) {
+                    Text("Not set").tag(BrushingHand?.none)
+                    ForEach(BrushingHand.allCases, id: \.self) { hand in
+                        Text(hand.displayName).tag(BrushingHand?.some(hand))
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if let wrist = settings.watchWrist {
+                    Text("Your Watch reports it is on your \(wrist == .left ? "left" : "right") wrist.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Open BrushCoach on your Watch once so it can report which wrist it is on.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(18)
+        .premiumCard(cornerRadius: 24)
+    }
+
+    private var brushingHand: Binding<BrushingHand?> {
+        Binding(
+            get: { settings.preferences.brushingHand },
+            set: { settings.preferences.brushingHand = $0 }
+        )
     }
 
     private var promptsCard: some View {

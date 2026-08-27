@@ -39,6 +39,11 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
     /// nothing. Never used to gate routine credit.
     public var verifiedZones: Int?
 
+    /// What motion analysis observed, or `nil` when it did not run — because the
+    /// Watch was on the wrong wrist, the user has not answered the handedness
+    /// question, or sensing failed. Never used to gate routine credit.
+    public var analysis: SessionAnalysis?
+
     public var source: BrushSessionSource
     public var flossed: Bool
     public var tongueCleaned: Bool
@@ -51,6 +56,7 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
         zonesCompleted: Int,
         plannedZones: Int = 6,
         verifiedZones: Int? = nil,
+        analysis: SessionAnalysis? = nil,
         source: BrushSessionSource,
         flossed: Bool = false,
         tongueCleaned: Bool = false
@@ -63,6 +69,7 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
         self.plannedZones = planned
         self.zonesCompleted = min(planned, max(0, zonesCompleted))
         self.verifiedZones = verifiedZones.map { min(planned, max(0, $0)) }
+        self.analysis = analysis
         self.source = source
         self.flossed = flossed
         self.tongueCleaned = tongueCleaned
@@ -85,6 +92,7 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
             zonesCompleted: try container.decodeIfPresent(Int.self, forKey: .zonesCompleted) ?? 0,
             plannedZones: planned,
             verifiedZones: try container.decodeIfPresent(Int.self, forKey: .verifiedZones),
+            analysis: try container.decodeIfPresent(SessionAnalysis.self, forKey: .analysis),
             source: try container.decodeIfPresent(BrushSessionSource.self, forKey: .source) ?? .manual,
             flossed: try container.decodeIfPresent(Bool.self, forKey: .flossed) ?? false,
             tongueCleaned: try container.decodeIfPresent(Bool.self, forKey: .tongueCleaned) ?? false
@@ -102,6 +110,14 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
 
     /// True when motion analysis ran and confirmed every planned zone.
     public var fullyVerified: Bool { verifiedZones.map { $0 >= plannedZones } ?? false }
+
+    /// Seconds of real brushing, when analysis produced a usable reading.
+    /// `nil` covers both "analysis did not run" and "analysis saw too little to
+    /// say" — the summary must not present either as zero seconds brushed.
+    public var activeBrushingSeconds: TimeInterval? {
+        guard let analysis, !analysis.isInconclusive else { return nil }
+        return analysis.activeBrushingSeconds
+    }
 }
 
 public struct RoutinePreferences: Codable, Equatable, Sendable {
@@ -113,6 +129,11 @@ public struct RoutinePreferences: Codable, Equatable, Sendable {
     public var eveningMinute: Int
     public var flossPromptEnabled: Bool
     public var tonguePromptEnabled: Bool
+
+    /// Which hand holds the toothbrush. The Watch reads its own wrist, so this
+    /// is the only half of the handedness question a person ever has to answer.
+    /// `nil` until they do.
+    public var brushingHand: BrushingHand?
 
     /// Hour at which the routine day rolls over, so late-night brushing counts
     /// toward the day it finished rather than the one it started.
@@ -129,6 +150,7 @@ public struct RoutinePreferences: Codable, Equatable, Sendable {
         eveningMinute: Int = 30,
         flossPromptEnabled: Bool = true,
         tonguePromptEnabled: Bool = false,
+        brushingHand: BrushingHand? = nil,
         dayEndsAtHour: Int = 3
     ) {
         self.morningEnabled = morningEnabled
@@ -139,6 +161,7 @@ public struct RoutinePreferences: Codable, Equatable, Sendable {
         self.eveningMinute = eveningMinute
         self.flossPromptEnabled = flossPromptEnabled
         self.tonguePromptEnabled = tonguePromptEnabled
+        self.brushingHand = brushingHand
         self.dayEndsAtHour = min(11, max(0, dayEndsAtHour))
     }
 
@@ -157,6 +180,7 @@ public struct RoutinePreferences: Codable, Equatable, Sendable {
             eveningMinute: try container.decodeIfPresent(Int.self, forKey: .eveningMinute) ?? fallback.eveningMinute,
             flossPromptEnabled: try container.decodeIfPresent(Bool.self, forKey: .flossPromptEnabled) ?? fallback.flossPromptEnabled,
             tonguePromptEnabled: try container.decodeIfPresent(Bool.self, forKey: .tonguePromptEnabled) ?? fallback.tonguePromptEnabled,
+            brushingHand: try container.decodeIfPresent(BrushingHand.self, forKey: .brushingHand),
             dayEndsAtHour: try container.decodeIfPresent(Int.self, forKey: .dayEndsAtHour) ?? fallback.dayEndsAtHour
         )
     }

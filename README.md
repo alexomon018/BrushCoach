@@ -1,9 +1,8 @@
 # BrushCoach — personal Apple Watch brushing coach
 
 BrushCoach is an Apple Watch–first toothbrushing coach with an iPhone companion. The shipping
-experience is a reliable two-minute, six-zone guided routine. A separate motion-classification
-library and labelled-data capture harness exist alongside it as developer tools; they are **not**
-part of the user-facing session yet.
+experience is a reliable two-minute, six-zone guided routine. Motion analysis runs alongside it and
+reports what it observed — without ever deciding whether the session counted.
 
 ## Status
 
@@ -12,13 +11,21 @@ part of the user-facing session yet.
 | Two-minute six-zone Watch pacer | Wired and working |
 | iPhone companion, history, reminders, Health writing | Wired and working |
 | Watch complication | Wired and working |
+| Handedness fork and honest capability reporting | Wired and working |
+| Real brushing time, stroke rate, position change | **Wired, thresholds unvalidated** |
 | Labelled trace capture → phone inbox → export → replay CLI | Wired and working |
-| Motion pipeline and feature extraction (`BrushKit`) | Built and unit-tested, **not called by either app** |
-| Personal calibration and zone classification (`BrushKit`) | Built and unit-tested, **not called by either app**, never validated against real traces |
+| Personal calibration and six-zone classification (`BrushKit`) | Built and unit-tested, **not called by either app** |
 
-A live brushing session currently reads **no** motion data. `SessionEngine`, `MotionPipeline`,
-`PersonalCalibrationBuilder`, `PersonalZoneClassifier`, and `PredictionSmoother` have no callers
-outside `BrushKit` and its tests. `BrushSession.verifiedZones` is therefore always `nil`.
+Two caveats stated plainly, because the difference matters:
+
+- The motion analysis that now runs during a session (`ActivityDetector`, `PositionChangeDetector`,
+  `LiveSessionAnalyzer`) is **calibration-free and threshold-based**. Its logic is unit-tested against
+  synthetic waveforms, but its default thresholds were derived from the physics of the signal, not
+  from recorded brushing. They are a hypothesis until `brush-replay --separability` has been run over
+  real traces. See [Validating the thresholds](#validating-the-thresholds).
+- The six-zone `PersonalCalibrationBuilder` / `PersonalZoneClassifier` remain unwired. Naming a mouth
+  region from a wrist IMU is the part the published work says is unreliable, and BrushCoach does not
+  currently attempt it.
 
 ## What works today
 
@@ -33,32 +40,59 @@ outside `BrushKit` and its tests. `BrushSession.verifiedZones` is therefore alwa
   the Watch.
 - Opt-in Apple Health writing using the toothbrushing event category, including update and deletion
   by BrushCoach session ID.
-- ADA-aligned onboarding and coaching language: two minutes twice daily, fluoride toothpaste, soft
-  bristles, gentle pressure, and an approximately 45-degree gumline angle.
-
-Routine credit depends only on the pacer. It is never withheld because motion analysis failed, and
-`verifiedZones` is deliberately distinct from `zonesCompleted` so that a future verification layer
-cannot retroactively take credit away.
+- Handedness-aware motion analysis: real brushing time, stroke-rate nudges, and position-change
+  detection when the Watch is on the brushing hand — and a plain statement that it cannot check when
+  it is not.
 
 There is no Core ML model, analytics SDK, or network client. All code is native Swift and Apple
 frameworks.
 
-## What is included
+## Handedness
 
-- `BrushCoachWatch`: the guided six-zone session, plus a developer trace-capture screen reached from
-  **More → Developer → Motion capture** on the ready screen.
-- `BrushCoach`: the consumer iPhone app (Today, History, Routine, More), and a trace inbox that
-  validates incoming JSON, stores it locally, shows measured duration/sample rate, and exports one or
-  many traces through the system share sheet.
-- `BrushCoachWidget`: the Watch complication.
-- `BrushKit`: a shared Swift package containing the session model and storage, the pure `SessionClock`
-  and `RoutineTimeline` that drive the pacer, the stable trace schema, the motion pipeline, and the
-  (currently unwired) personal calibration classifier and `SessionEngine`.
-- `brush-replay`: a macOS Swift CLI that sends exported traces through `MotionPipeline` and
-  `SessionEngine` without a watch.
-- `BrushKitTests`: deterministic tests for wall-clock session timing, routine-day and streak logic,
-  session persistence and schema migration, timestamp resampling, spectral feature extraction,
-  overlapping windows, personal calibration/classification, smoothing, fixture decoding, and replay.
+Most people wear the Watch on the non-dominant wrist and brush with the dominant hand. When those
+differ the Watch is on an arm that barely moves, and no amount of signal processing recovers a
+brushing stroke that was never recorded. BrushCoach treats that as a first-class, user-visible state
+rather than an edge case, because the alternative is telling someone they did not brush when they
+did.
+
+The Watch reads its own wrist through `WKInterfaceDevice.current().wristLocation`, so onboarding only
+ever asks **one** question: which hand holds the brush. `HandednessProfile` resolves the two into a
+`SensingCapability`:
+
+| Capability | Meaning | What the user sees |
+| --- | --- | --- |
+| `available` | Watch is on the brushing hand | Brushing time and coaching |
+| `wrongWrist` | Watch is on the other wrist | Pacing only, with the reason stated |
+| `unknown` | Question not answered yet | A prompt to answer it |
+
+The answer is a preference, not a one-time immutable onboarding result — some people alternate hands.
+It can be changed any time under **Routine → Stroke checking**, which also shows which wrist the Watch
+last reported.
+
+## What motion analysis claims, and what it does not
+
+`LiveSessionAnalyzer` runs beside the pacer, never driving it. The pacer stays pure wall-clock, so a
+sensing failure cannot slow the session, stop it, or desynchronise the timer — it only means the
+summary has less to say.
+
+What it reports:
+
+- **Real brushing time.** Seconds the wrist was actually moving in a brushing rhythm, as opposed to
+  elapsed session time. Most people's "two minutes" includes wetting the brush, rinsing, and standing
+  still.
+- **Stroke rate.** Dominant oscillation of the strongest acceleration axis, in strokes per minute,
+  with a throttled haptic nudge past the configured ceiling.
+- **Position changes.** That the wrist moved to a new posture — deliberately *not* which mouth zone it
+  moved to. This is change-point detection on the gravity vector, so there is no zone label to get
+  wrong, and it sidesteps the same-side confusion the literature documents.
+
+What it never does:
+
+- Decide whether the session counted. `BrushSession.completedRoutine` depends only on the pacer.
+- Report an inconclusive reading as zero. `SessionAnalysis.isInconclusive` and the `nil` case of
+  `BrushSession.activeBrushingSeconds` exist so the summary can say "couldn't check" rather than
+  "you didn't brush".
+- Name a mouth zone.
 
 ## Repository layout
 
@@ -70,12 +104,12 @@ BrushCoach.xcodeproj
 ├── Config/                     Info plists and App Group entitlements
 └── BrushKit/
     ├── Sources/BrushKit/
-    │   ├── Models/             sessions, routine day, motion samples, labelled trace JSON
+    │   ├── Models/             sessions, handedness, routine day, motion samples, trace JSON
     │   ├── Pipeline/           resampler, windows, feature extraction
-    │   ├── Classification/     personal profile, classifier, and pacer fallback (unwired)
-    │   ├── Session/            SessionClock, RoutineTimeline, SessionEngine
+    │   ├── Classification/     activity detector, position change, unwired zone classifier
+    │   ├── Session/            SessionClock, RoutineTimeline, SessionEngine, LiveSessionAnalyzer
     │   └── Storage/            local session repository
-    ├── Sources/BrushReplay/    offline replay CLI
+    ├── Sources/BrushReplay/    offline replay and separability CLI
     └── Tests/BrushKitTests/    unit tests and trace fixture
 ```
 
@@ -104,9 +138,6 @@ retains the entitlement files for paid-team provisioning.
 
 ## Developer labelled-data capture
 
-No dataset has been collected yet. The checked-in `short-trace.json` fixture exists to prove the JSON
-round-trips through the pipeline; it is not training data.
-
 From the Watch ready screen, open **More → Developer → Motion capture**:
 
 1. Tap **Choose label** and select one of the six coarse mouth zones, `Transition`, or `Idle`.
@@ -125,31 +156,45 @@ position; otherwise a model can learn the recording setup instead of brushing mo
 The requested rate is 50 Hz, but every Core Motion sample retains its real monotonic timestamp. The
 iPhone inbox and replay CLI report the actual measured rate so dropouts are visible.
 
-## Export from iPhone
+Export from **More → Motion trace inbox** on the iPhone. Each row shares as its original JSON file;
+**Export all** sends every valid trace through the system share sheet. Raw traces are never uploaded —
+export happens only after an explicit share action.
 
-Open the iPhone app after captures transfer and go to **More → Motion trace inbox**. Each row can be
-shared as its original JSON file. **Export all** sends every valid trace to Files, AirDrop, or another
-destination through the system share sheet.
+## Validating the thresholds
 
-Raw traces are never uploaded by BrushCoach. Export happens only after an explicit share action.
+This is the step that decides whether the verification features are real. Record traces labelled
+`Idle` and at least one mouth zone, export them, then:
+
+```sh
+cd BrushKit
+swift run brush-replay --separability /path/to/traces/*.json
+```
+
+The report pools windows by label and prints, for each group, the median and 10th/90th-percentile
+motion energy and the median stroke rate; then the **best achievable single energy threshold** and its
+accuracy, how the shipped default compares, and what fraction of each group passes the rhythm gate.
+
+Read the verdict as a distribution, not a pass/fail:
+
+| Best accuracy | What it means |
+| --- | --- |
+| ≥ 90% | Strong. Ship brushing time; consider retuning the default to the reported best value. |
+| 75–90% | Workable but noisy. Ship only with visible uncertainty, and record more varied traces. |
+| < 75% | Weak. Do not ship a verification tier on this data; check the Watch was on the brushing hand. |
+
+Retune by changing the defaults in `ActivityDetectorConfiguration`. Every value there is documented as
+provisional for exactly this reason.
 
 ## Replay traces offline
-
-From the repository root:
 
 ```sh
 cd BrushKit
 swift run brush-replay /path/to/trace.json
 ```
 
-Pass several paths to compare a batch:
-
-```sh
-swift run brush-replay /path/to/trace-1.json /path/to/trace-2.json
-```
-
-The command prints raw duration and sample rate, feature-window count, first-window dominant frequency
-and energy, feature schema version/count, and `SessionEngine` event totals.
+Pass several paths to compare a batch. The command prints raw duration and sample rate, feature-window
+count, first-window dominant frequency and energy, feature schema version/count, `SessionEngine` event
+totals, and the `LiveSessionAnalyzer` summary for that trace.
 
 ## Run tests
 
@@ -176,6 +221,10 @@ The spectral calculation is a deterministic, dependency-free DFT. It uses the ac
 the highest variance so a symmetric back-and-forth stroke is not incorrectly frequency-doubled by
 taking an absolute magnitude first.
 
+Because windows overlap by 50%, anything accumulating time from them must attribute the **hop**, not
+the window, or twenty seconds of brushing reads as forty. `LiveSessionAnalyzer` does this and has a
+test pinning it.
+
 Feature names travel alongside values for auditability. Training/export code should pin
 `FeatureVector.schemaVersion` and reject a mismatch rather than silently changing model inputs.
 
@@ -183,23 +232,20 @@ Feature names travel alongside values for auditability. Training/export code sho
 
 These are open, not hidden:
 
-- **The classifier has never seen real data.** `PersonalCalibrationBuilder` and
-  `PersonalZoneClassifier` are unit-tested against synthetic signals only. Their accuracy on real
-  brushing is unknown, and published wrist-IMU work suggests coarse zones are the realistic ceiling.
-- **Consumer onboarding never asks about handedness.** Most people wear the watch on the
-  non-dominant hand and brush with the dominant one; if those differ, wrist IMU data is largely
-  useless for zone inference. `WatchWrist` currently appears only on the developer capture screen, so
-  `PersonalCalibrationProfile.watchWrist` has no consumer path that populates it. This has to become a
-  first-class onboarding question before any verification layer ships.
-- **`CalibrationProfileStore` is unreferenced.** It persists a profile that nothing currently
-  produces or consumes.
+- **The activity thresholds have never seen real data.** See
+  [Validating the thresholds](#validating-the-thresholds). This is the top open item.
+- **The six-zone classifier is still unwired.** `PersonalCalibrationBuilder` and
+  `PersonalZoneClassifier` are unit-tested against synthetic signals only, and no calibration UI
+  exists. `CalibrationProfileStore` persists a profile that nothing currently produces or consumes.
 - **watchOS cannot do passive detection.** Continuously running a watchOS app in the background is
   not a supported use case, and borrowing a workout session in a non-workout app risks App Review
-  rejection. Sessions must stay user-initiated. The app uses the `self-care` background mode, which
-  is the correct one here.
+  rejection. Sessions stay user-initiated; the app uses the `self-care` background mode, which is the
+  correct one here.
 - **`BrushSession.period`** uses the default `RoutineDay` rather than the user's configured rollover
   hour. Call sites that matter pass the configured day explicitly, so this is latent rather than
   broken.
+- **No asset catalog, app icon, privacy manifest, or StoreKit integration.** These block App Store
+  submission and are tracked separately from product work.
 
 ## JSON and privacy
 
