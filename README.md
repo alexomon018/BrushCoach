@@ -113,12 +113,15 @@ What it reports:
 
 - **Real brushing time.** Seconds the wrist was actually moving in a brushing rhythm, as opposed to
   elapsed session time. Most people's "two minutes" includes wetting the brush, rinsing, and standing
-  still.
+  still. Analysis stops while the session is paused, and a recording that ends early is reported as
+  inconclusive rather than as a small brushing total — `SessionAnalysis.coveredSeconds` and
+  `recordingCompleted` exist so a truncated reading cannot pose as a whole session.
 - **Stroke rate.** Dominant oscillation of the strongest acceleration axis, in strokes per minute,
   with a throttled haptic nudge past the configured ceiling.
 - **Position changes.** That the wrist moved to a new posture — deliberately *not* which mouth zone it
   moved to. This is change-point detection on the gravity vector, so there is no zone label to get
-  wrong, and it sidesteps the same-side confusion the literature documents.
+  wrong, and it sidesteps the same-side confusion the literature documents. Time held in a posture is
+  counted from brushing windows only, so standing still does not inflate it or trip the nudge.
 
 What it never does:
 
@@ -206,8 +209,13 @@ swift run brush-replay --separability /path/to/traces/*.json
 ```
 
 The report pools windows by label and prints, for each group, the median and 10th/90th-percentile
-motion energy and the median stroke rate; then the **best achievable single energy threshold** and its
-accuracy, how the shipped default compares, and what fraction of each group passes the rhythm gate.
+motion energy and the median stroke rate; then the best achievable single energy threshold, what
+fraction of each group passes the rhythm gate, and — the number that matters — the accuracy of the
+**full detector rule the app actually runs**, which requires energy *and* rhythm together.
+
+The verdict is based on that combined rule, never on energy alone. Energy can separate perfectly while
+the rhythm gate rejects every brushing window, which would look excellent here and detect nothing on
+the wrist; that case is called out explicitly rather than scored.
 
 Read the verdict as a distribution, not a pass/fail:
 

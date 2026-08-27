@@ -39,6 +39,7 @@ final class CoachViewModel {
     @ObservationIgnored private var analyzer = LiveSessionAnalyzer()
     @ObservationIgnored private var didSenseMotion = false
     @ObservationIgnored private var lastStrokeRateNudge: Date?
+    @ObservationIgnored private var isStoppingMotionDeliberately = false
     @ObservationIgnored private let timeline = RoutineTimeline()
     /// Elapsed time is derived from wall-clock instants, never accumulated from
     /// ticks, so a suspended process cannot make the session drift. See
@@ -119,6 +120,12 @@ final class CoachViewModel {
         clock.pause(at: .now)
         elapsed = clock.elapsed(at: .now)
         phase = .paused
+        // Motion keeps arriving while paused; none of it is this session's
+        // brushing, and a window spanning the pause would be interpolated
+        // across the gap.
+        analyzer.suspend()
+        liveActivity = nil
+        liveZone = nil
         WKInterfaceDevice.current().play(.stop)
     }
 
@@ -266,29 +273,42 @@ final class CoachViewModel {
         // Rebuilt per session: the profile can be created, replaced, or cleared
         // between sessions, and a stale classifier is worse than none.
         analyzer = LiveSessionAnalyzer(profile: calibrationProfile)
+        isStoppingMotionDeliberately = false
 
         motionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             // A hard ceiling well past the routine, so an abandoned session can
             // never leave device motion running.
             let ceiling = timeline.totalDuration + 60
-            _ = try? await recorder.recordUntilStopped(maxDuration: ceiling) { [weak self] sample, _ in
-                guard let self else { return true }
-                didSenseMotion = true
-                let scheduled = timeline.plan.zones[currentZoneIndex]
-                for insight in analyzer.ingest(sample, scheduledZone: scheduled) {
-                    handle(insight)
+            do {
+                _ = try await recorder.recordUntilStopped(maxDuration: ceiling) { [weak self] sample, _ in
+                    guard let self else { return true }
+                    // Paused: the pacer is not counting, so neither does analysis.
+                    guard phase == .brushing else { return false }
+                    didSenseMotion = true
+                    let scheduled = timeline.plan.zones[currentZoneIndex]
+                    for insight in analyzer.ingest(sample, scheduledZone: scheduled) {
+                        handle(insight)
+                    }
+                    liveActivity = analyzer.currentActivity
+                    liveZone = analyzer.currentZone
+                    liveBrushingSeconds = analyzer.currentAnalysis.activeBrushingSeconds
+                    return false
                 }
-                liveActivity = analyzer.currentActivity
-                liveZone = analyzer.currentZone
-                liveBrushingSeconds = analyzer.currentAnalysis.activeBrushingSeconds
-                return false
+            } catch is CancellationError {
+                // Expected: `stopMotionAnalysis` cancels the recorder when the
+                // session ends normally.
+            } catch {
+                // Core Motion gave up mid-session. Keep what was measured, but
+                // never let a truncated recording be read as a whole session.
+                if !isStoppingMotionDeliberately { analyzer.markRecordingIncomplete() }
             }
         }
     }
 
     private func stopMotionAnalysis() {
         guard motionTask != nil else { return }
+        isStoppingMotionDeliberately = true
         motionTask?.cancel()
         motionTask = nil
         recorder.cancel()

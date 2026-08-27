@@ -236,7 +236,11 @@ struct SessionAnalysisCreditTests {
             endedAt: .now.addingTimeInterval(120),
             duration: 120,
             zonesCompleted: 6,
-            analysis: SessionAnalysis(activeBrushingSeconds: 94, windowCount: 60),
+            analysis: SessionAnalysis(
+                activeBrushingSeconds: 94,
+                windowCount: 60,
+                coveredSeconds: 118
+            ),
             source: .watch
         )
         #expect(session.activeBrushingSeconds == 94)

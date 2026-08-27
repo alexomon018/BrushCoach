@@ -40,6 +40,16 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
     /// different things to diagnose.
     public var zoneEstimationAttempted: Bool
 
+    /// Wall-clock span the analysed windows actually covered. A recorder that
+    /// dies ten seconds into a two-minute session still produces windows, and
+    /// without this its handful of seconds would be reported as the whole
+    /// session's brushing time.
+    public var coveredSeconds: TimeInterval
+
+    /// Whether motion recording ran to the end of the session. False after a
+    /// Core Motion failure, which must not be presented as a finished reading.
+    public var recordingCompleted: Bool
+
     public init(
         activeBrushingSeconds: TimeInterval = 0,
         fastStrokeSeconds: TimeInterval = 0,
@@ -49,7 +59,9 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
         windowCount: Int = 0,
         confidentZoneWindows: Int = 0,
         zoneAgreement: Double? = nil,
-        zoneEstimationAttempted: Bool = false
+        zoneEstimationAttempted: Bool = false,
+        coveredSeconds: TimeInterval = 0,
+        recordingCompleted: Bool = true
     ) {
         self.activeBrushingSeconds = max(0, activeBrushingSeconds)
         self.fastStrokeSeconds = max(0, fastStrokeSeconds)
@@ -60,11 +72,28 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
         self.confidentZoneWindows = max(0, confidentZoneWindows)
         self.zoneAgreement = zoneAgreement.map { min(1, max(0, $0)) }
         self.zoneEstimationAttempted = zoneEstimationAttempted
+        self.coveredSeconds = max(0, coveredSeconds)
+        self.recordingCompleted = recordingCompleted
     }
 
-    /// True when too little motion arrived to say anything. Report this as
-    /// "couldn't check", never as "you didn't brush".
+    /// True when too little motion arrived to say anything at all. Report this
+    /// as "couldn't check", never as "you didn't brush".
     public var isInconclusive: Bool { windowCount < 3 }
+
+    /// Fraction of a session of `duration` that analysis actually observed.
+    public func coverage(ofSessionLasting duration: TimeInterval) -> Double {
+        guard duration > 0 else { return 0 }
+        return min(1, coveredSeconds / duration)
+    }
+
+    /// Whether this reading can stand as a statement about the whole session.
+    ///
+    /// A truncated recording is the dangerous case: it looks like a normal
+    /// result and silently under-reports brushing time by however much of the
+    /// session it missed.
+    public func isInconclusive(forSessionLasting duration: TimeInterval) -> Bool {
+        isInconclusive || !recordingCompleted || coverage(ofSessionLasting: duration) < 0.8
+    }
 }
 
 public enum SessionInsight: Hashable, Sendable {
@@ -130,6 +159,11 @@ public struct LiveSessionAnalyzer: Sendable {
     private var strokeRates: [Double] = []
     private var nudgedForCurrentPosition = false
     private var analysis = SessionAnalysis()
+    private var firstWindowStart: TimeInterval?
+    /// Brushing seconds accumulated in the current posture. Distinct from the
+    /// detector's wall-clock hold: standing still for a minute is not "held one
+    /// position while brushing", and must not trip the nudge.
+    private var brushingSecondsInPosition: TimeInterval = 0
 
     private let zoneClassifier: PersonalZoneClassifier?
     private var smoother = PredictionSmoother(capacity: 3)
@@ -179,6 +213,8 @@ public struct LiveSessionAnalyzer: Sendable {
 
         for features in pipeline.append(sample) {
             analysis.windowCount += 1
+            if firstWindowStart == nil { firstWindowStart = features.windowStart }
+            analysis.coveredSeconds = max(0, features.windowEnd - (firstWindowStart ?? features.windowStart))
 
             // Attribute the hop, not the window, so 50%-overlapping windows do
             // not double-count the seconds they share.
@@ -211,16 +247,22 @@ public struct LiveSessionAnalyzer: Sendable {
             if position.ingest(features) {
                 analysis.positionChanges = position.changeCount
                 nudgedForCurrentPosition = false
+                brushingSecondsInPosition = 0
                 insights.append(.positionChanged(total: position.changeCount))
             }
 
-            if let held = position.secondsInCurrentPosition(at: features.windowEnd) {
-                analysis.longestSinglePositionSeconds = max(analysis.longestSinglePositionSeconds, held)
-                if reading.activity == .brushing,
-                   !nudgedForCurrentPosition,
-                   held >= configuration.singlePositionNudgeSeconds {
+            // Counted from brushing windows only, so a long idle stretch in one
+            // posture neither inflates the summary nor fires the nudge.
+            if reading.activity == .brushing {
+                brushingSecondsInPosition += elapsed
+                analysis.longestSinglePositionSeconds = max(
+                    analysis.longestSinglePositionSeconds,
+                    brushingSecondsInPosition
+                )
+                if !nudgedForCurrentPosition,
+                   brushingSecondsInPosition >= configuration.singlePositionNudgeSeconds {
                     nudgedForCurrentPosition = true
-                    insights.append(.heldOnePositionTooLong(seconds: held))
+                    insights.append(.heldOnePositionTooLong(seconds: brushingSecondsInPosition))
                 }
             }
         }
@@ -258,6 +300,25 @@ public struct LiveSessionAnalyzer: Sendable {
         return .zoneEstimated(zone, confidence: smoothed.confidence)
     }
 
+    /// Drops the partial window and stops accounting, without discarding what
+    /// has been measured. Used while the session is paused: samples that arrive
+    /// during a pause are not brushing, and a window spanning the pause would be
+    /// interpolated across the gap.
+    public mutating func suspend() {
+        pipeline.reset()
+        smoother.reset()
+        latestActivity = .idle
+        latestZone = nil
+        previousWindowEnd = nil
+    }
+
+    /// Records that motion recording ended before the session did. The reading
+    /// is kept — partial data is still worth showing — but it can no longer
+    /// claim to describe the whole session.
+    public mutating func markRecordingIncomplete() {
+        analysis.recordingCompleted = false
+    }
+
     public mutating func reset() {
         pipeline.reset()
         activity.reset()
@@ -270,6 +331,8 @@ public struct LiveSessionAnalyzer: Sendable {
         smoother.reset()
         zoneMatches = 0
         latestZone = nil
+        firstWindowStart = nil
+        brushingSecondsInPosition = 0
     }
 
     private func median(of values: [Double]) -> Double {

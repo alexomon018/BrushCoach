@@ -115,7 +115,7 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
     /// `nil` covers both "analysis did not run" and "analysis saw too little to
     /// say" — the summary must not present either as zero seconds brushed.
     public var activeBrushingSeconds: TimeInterval? {
-        guard let analysis, !analysis.isInconclusive else { return nil }
+        guard let analysis, !analysis.isInconclusive(forSessionLasting: duration) else { return nil }
         return analysis.activeBrushingSeconds
     }
 }

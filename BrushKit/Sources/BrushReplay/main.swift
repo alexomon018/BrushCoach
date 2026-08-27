@@ -121,19 +121,36 @@ struct BrushReplayCommand {
             brushing: brushing.map(\.energy)
         )
 
-        print("  Energy threshold")
+        let rhythmSensitivity = fraction(brushing, \.isRhythmic)
+        let rhythmFalsePositive = fraction(idle, \.isRhythmic)
+        let fullBest = fullRuleAccuracy(threshold: best.threshold, idle: idle, brushing: brushing)
+        let fullShipped = fullRuleAccuracy(threshold: shipped.enterBrushingEnergy, idle: idle, brushing: brushing)
+
+        print("  Energy threshold, in isolation")
         print("    best separating value: \(format(best.threshold, places: 4)) → \(percent(best.accuracy)) of windows correct")
         print("    shipped default (\(format(shipped.enterBrushingEnergy, places: 4))): \(percent(shippedAccuracy)) correct")
         print("")
         print("  Rhythm gate (\(format(shipped.minimumStrokeFrequencyHz))–\(format(shipped.maximumStrokeFrequencyHz)) Hz)")
-        print("    brushing windows judged rhythmic: \(percent(fraction(brushing, \.isRhythmic)))")
-        print("    idle windows judged rhythmic:     \(percent(fraction(idle, \.isRhythmic)))")
+        print("    brushing windows judged rhythmic: \(percent(rhythmSensitivity))")
+        print("    idle windows judged rhythmic:     \(percent(rhythmFalsePositive))")
+        print("")
+        print("  Full detector (energy AND rhythm) — this is what the app runs")
+        print("    at best energy value:  \(percent(fullBest))")
+        print("    at shipped default:    \(percent(fullShipped))")
         print("")
 
+        // The verdict is based on the combined rule, never on energy alone.
+        // Energy can separate perfectly while the rhythm gate rejects every
+        // brushing window, which would score well here and detect nothing on
+        // the wrist.
         let verdict: String
-        if best.accuracy >= 0.9 {
-            verdict = "Strong. Brushing time is worth shipping; consider tuning the default to the best value above."
-        } else if best.accuracy >= 0.75 {
+        if rhythmSensitivity < 0.5 {
+            verdict = """
+            Blocked by the rhythm gate. Energy separates at \(percent(best.accuracy)), but only \(percent(rhythmSensitivity)) of             brushing windows register a stroke inside \(format(shipped.minimumStrokeFrequencyHz))–\(format(shipped.maximumStrokeFrequencyHz)) Hz,             so the app would detect almost nothing. Widen the band in ActivityDetectorConfiguration and re-run before changing anything else.
+            """
+        } else if fullBest >= 0.9 {
+            verdict = "Strong. Brushing time is worth shipping; consider tuning the default to the best energy value above."
+        } else if fullBest >= 0.75 {
             verdict = "Workable but noisy. Ship it only with visible uncertainty, and record more varied traces first."
         } else {
             verdict = "Weak. Do not ship a verification tier on this data. Record more traces, and check the Watch was on the brushing hand."
@@ -162,15 +179,38 @@ struct BrushReplayCommand {
     /// Sweeps every midpoint between observed values and keeps the split that
     /// classifies the most windows correctly.
     private static func bestThreshold(idle: [Double], brushing: [Double]) -> (threshold: Double, accuracy: Double) {
-        let candidates = Set(idle + brushing).sorted()
-        var best = (threshold: 0.0, accuracy: 0.0)
-        for (index, value) in candidates.enumerated() {
-            let next = index + 1 < candidates.count ? candidates[index + 1] : value
-            let threshold = (value + next) / 2
+        let observed = Set(idle + brushing).sorted()
+        guard let lowest = observed.first, let highest = observed.last else { return (0, 0) }
+
+        // Midpoints between observed values, plus the two degenerate splits:
+        // below everything (call it all brushing) and above everything (call it
+        // all idle). When one class dominates, a degenerate split really is the
+        // most accurate one, and omitting it reports a "best" that is not.
+        var candidates: [Double] = [lowest - 1, highest + 1]
+        for (index, value) in observed.enumerated() where index + 1 < observed.count {
+            candidates.append((value + observed[index + 1]) / 2)
+        }
+
+        var best = (threshold: candidates[0], accuracy: -1.0)
+        for threshold in candidates {
             let score = accuracy(threshold: threshold, idle: idle, brushing: brushing)
             if score > best.accuracy { best = (threshold, score) }
         }
         return best
+    }
+
+    /// Accuracy of the rule the app actually runs: energy over the threshold
+    /// **and** an oscillation inside the stroke band. Energy alone is what the
+    /// sweep optimises, but it is not what ships.
+    private static func fullRuleAccuracy(
+        threshold: Double,
+        idle: [Scored],
+        brushing: [Scored]
+    ) -> Double {
+        let correct = idle.filter { !($0.energy >= threshold && $0.isRhythmic) }.count
+            + brushing.filter { $0.energy >= threshold && $0.isRhythmic }.count
+        let total = idle.count + brushing.count
+        return total == 0 ? 0 : Double(correct) / Double(total)
     }
 
     private static func accuracy(threshold: Double, idle: [Double], brushing: [Double]) -> Double {
