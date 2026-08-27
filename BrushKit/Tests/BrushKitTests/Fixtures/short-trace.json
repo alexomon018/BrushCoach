@@ -1,0 +1,25 @@
+{
+  "metadata" : {
+    "id" : "D93CA5AE-FA72-409A-91D8-08A3D84E8A7F",
+    "label" : "upperLeft",
+    "recordedAt" : "2026-08-26T18:00:00Z",
+    "requestedDuration" : 2.2,
+    "requestedSampleRateHz" : 5,
+    "schemaVersion" : 1,
+    "watchWrist" : "left"
+  },
+  "samples" : [
+    {"timestamp":0.00,"userAcceleration":{"x":0.00,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":0.19,"userAcceleration":{"x":0.40,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":0.42,"userAcceleration":{"x":-0.35,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":0.61,"userAcceleration":{"x":0.38,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":0.79,"userAcceleration":{"x":-0.42,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":1.02,"userAcceleration":{"x":0.36,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":1.18,"userAcceleration":{"x":-0.39,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":1.41,"userAcceleration":{"x":0.41,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":1.63,"userAcceleration":{"x":-0.37,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":1.82,"userAcceleration":{"x":0.35,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":2.01,"userAcceleration":{"x":-0.40,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}},
+    {"timestamp":2.21,"userAcceleration":{"x":0.00,"y":0,"z":0},"rotationRate":{"x":0,"y":0,"z":0},"gravity":{"x":0,"y":-1,"z":0},"attitude":{"x":0,"y":0,"z":0,"w":1}}
+  ]
+}

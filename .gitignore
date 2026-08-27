@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+DerivedData/
+DeviceDerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Exported personal motion traces. Recorded brushing data is personal;
+# commit it only deliberately, never by accident.
+*.brushtrace.json
+Traces/
