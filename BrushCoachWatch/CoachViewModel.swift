@@ -28,6 +28,9 @@ final class CoachViewModel {
     /// What motion analysis is seeing right now, or `nil` when it is not running.
     private(set) var liveActivity: MotionActivity?
     private(set) var liveBrushingSeconds: TimeInterval = 0
+    /// Latest confident zone estimate. `nil` whenever there is no calibration
+    /// profile, or the estimate is not confident enough to show.
+    private(set) var liveZone: BrushZoneLabel?
 
     @ObservationIgnored private let runtime = ExtendedRuntimeController()
     @ObservationIgnored private let recorder = WatchMotionRecorder()
@@ -52,6 +55,16 @@ final class CoachViewModel {
         ).capability
     }
 
+    /// Whether a usable calibration profile exists. Drives the More menu entry
+    /// and whether zone estimates run at all.
+    var hasCalibration: Bool { calibrationProfile != nil }
+
+    /// A load failure and an absent profile are both "no usable calibration"
+    /// here; the distinction only matters on the calibration screen itself.
+    private var calibrationProfile: PersonalCalibrationProfile? {
+        try? CalibrationProfileStore.load()
+    }
+
     var isBusy: Bool {
         switch phase {
         case .countdown, .brushing, .paused: true
@@ -70,6 +83,10 @@ final class CoachViewModel {
     var zoneName: String {
         ["Upper right", "Upper centre", "Upper left", "Lower left", "Lower centre", "Lower right"][currentZoneIndex]
     }
+
+    /// The zone the pacer is currently prompting, as distinct from `liveZone`,
+    /// which is where the classifier thinks the brush actually is.
+    var scheduledZone: BrushZoneLabel { timeline.plan.zones[currentZoneIndex] }
 
     func startSession() {
         guard workTask == nil else { return }
@@ -154,6 +171,7 @@ final class CoachViewModel {
         sessionStartedAt = nil
         liveActivity = nil
         liveBrushingSeconds = 0
+        liveZone = nil
         didSenseMotion = false
         lastStrokeRateNudge = nil
         analyzer.reset()
@@ -245,7 +263,9 @@ final class CoachViewModel {
     /// nothing — it only means the summary has less to say.
     private func startMotionAnalysis() {
         guard capability.canSenseMotion, motionTask == nil else { return }
-        analyzer.reset()
+        // Rebuilt per session: the profile can be created, replaced, or cleared
+        // between sessions, and a stale classifier is worse than none.
+        analyzer = LiveSessionAnalyzer(profile: calibrationProfile)
 
         motionTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -255,10 +275,12 @@ final class CoachViewModel {
             _ = try? await recorder.recordUntilStopped(maxDuration: ceiling) { [weak self] sample, _ in
                 guard let self else { return true }
                 didSenseMotion = true
-                for insight in analyzer.ingest(sample) {
+                let scheduled = timeline.plan.zones[currentZoneIndex]
+                for insight in analyzer.ingest(sample, scheduledZone: scheduled) {
                     handle(insight)
                 }
                 liveActivity = analyzer.currentActivity
+                liveZone = analyzer.currentZone
                 liveBrushingSeconds = analyzer.currentAnalysis.activeBrushingSeconds
                 return false
             }
@@ -271,6 +293,7 @@ final class CoachViewModel {
         motionTask = nil
         recorder.cancel()
         liveActivity = nil
+        liveZone = nil
     }
 
     private func handle(_ insight: SessionInsight) {
@@ -280,7 +303,9 @@ final class CoachViewModel {
         case .heldOnePositionTooLong:
             // The wrist is moving and usually out of sight; this has to be felt.
             WKInterfaceDevice.current().play(.retry)
-        case .activityChanged, .positionChanged:
+        case .activityChanged, .positionChanged, .zoneEstimated:
+            // Zone estimates are shown, never felt. A haptic per estimate would
+            // fire every second and would be wrong often enough to mislead.
             break
         }
     }

@@ -395,8 +395,18 @@ public struct PredictionSmoother: Sendable {
         guard let winner = votes.max(by: { $0.value < $1.value }) else {
             return ClassificationResult(activity: .brushing, zone: nil, side: nil, jaw: nil, confidence: 0)
         }
+        // Vote share alone is trivially 1.0 whenever the recent windows happen to
+        // agree, even if the classifier was barely above chance on every one of
+        // them. Scaling by the winning windows' own confidence keeps the
+        // classifier's uncertainty visible instead of laundering it into
+        // certainty through unanimity.
         let total = votes.values.reduce(0, +)
-        let confidence = total > 0 ? winner.value / total : 0
+        let share = total > 0 ? winner.value / total : 0
+        let winningConfidence = recent
+            .filter { $0.activity == .brushing && $0.zone == winner.key }
+            .map(\.confidence)
+            .average
+        let confidence = share * winningConfidence
         return ClassificationResult(
             activity: .brushing,
             zone: winner.key,

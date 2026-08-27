@@ -14,7 +14,7 @@ reports what it observed — without ever deciding whether the session counted.
 | Handedness fork and honest capability reporting | Wired and working |
 | Real brushing time, stroke rate, position change | **Wired, thresholds unvalidated** |
 | Labelled trace capture → phone inbox → export → replay CLI | Wired and working |
-| Personal calibration and six-zone classification (`BrushKit`) | Built and unit-tested, **not called by either app**, gated on the separability result |
+| Guided calibration and six-zone estimation | **Wired and experimental** — opt-in, confidence-gated, never affects credit |
 
 Two caveats stated plainly, because the difference matters:
 
@@ -23,9 +23,10 @@ Two caveats stated plainly, because the difference matters:
   synthetic waveforms, but its default thresholds were derived from the physics of the signal, not
   from recorded brushing. They are a hypothesis until `brush-replay --separability` has been run over
   real traces. See [Validating the thresholds](#validating-the-thresholds).
-- The six-zone `PersonalCalibrationBuilder` / `PersonalZoneClassifier` remain unwired. Naming a mouth
-  region from a wrist IMU is the part the published work says is unreliable, and BrushCoach does not
-  currently attempt it.
+- Six-zone estimation is **opt-in and experimental**. Naming a mouth region from a wrist IMU is the
+  part the published work says is unreliable, so estimates are hidden below a confidence threshold,
+  labelled experimental wherever they appear, and never used to decide whether a session counted.
+  See [Calibration and zone estimation](#calibration-and-zone-estimation).
 
 ## What works today
 
@@ -69,6 +70,39 @@ The answer is a preference, not a one-time immutable onboarding result — some 
 It can be changed any time under **Routine → Stroke checking**, which also shows which wrist the Watch
 last reported.
 
+## Calibration and zone estimation
+
+Zone estimation is off until the user calibrates. The entry point is **More → Stroke checking →
+Calibrate zones** on the Watch, and it is disabled unless the handedness check says motion can be
+read at all.
+
+A run takes about three minutes: a stillness baseline, then each of the six zones for twenty seconds
+with a reposition gap between them. Motion is recorded continuously for the whole run and the
+collector's stage is switched underneath it — restarting Core Motion per zone drops the first samples
+every time, which would bias every prototype toward its own tail. The pipeline resets at each stage
+boundary so no feature window can straddle two stages.
+
+The result is a `PersonalCalibrationProfile`: a compact statistical description of how one person
+moves, stored on the Watch only and never transferred to the phone. A new profile replaces the old one
+**only** after a run completes and builds successfully, so an abandoned or failed calibration leaves a
+working profile intact.
+
+Three things keep this honest:
+
+- **Confidence gating.** `LiveSessionAnalyzerConfiguration.zoneConfidenceThreshold` discards estimates
+  below the bar rather than showing them with a caveat — on a watch face nobody reads the caveat. The
+  default errs slightly toward firing during the experimental period, because a feature that never
+  fires teaches its author nothing.
+- **Smoothed confidence reflects real uncertainty.** `PredictionSmoother` multiplies vote share by the
+  winning windows' own confidence. Vote share alone would call three unanimous coin-flips a certainty.
+- **"Prompt agreement", not accuracy.** The summary reports how often confident estimates matched the
+  prompted zone. It cannot separate "you followed the prompt" from "the classifier agrees", and is
+  named accordingly. `SessionAnalysis.zoneEstimationAttempted` distinguishes "not calibrated" from
+  "calibrated but never confident", so a silent session can be diagnosed.
+
+The calibration screen reports a separation score. High means the six captures looked distinct from
+each other — a precondition for estimates working, not evidence that they will.
+
 ## What motion analysis claims, and what it does not
 
 `LiveSessionAnalyzer` runs beside the pacer, never driving it. The pacer stays pure wall-clock, so a
@@ -92,7 +126,8 @@ What it never does:
 - Report an inconclusive reading as zero. `SessionAnalysis.isInconclusive` and the `nil` case of
   `BrushSession.activeBrushingSeconds` exist so the summary can say "couldn't check" rather than
   "you didn't brush".
-- Name a mouth zone.
+- Name a mouth zone with any confidence it does not have. Zone estimates appear only above the
+  threshold, only when calibrated, and always labelled experimental.
 
 ## Repository layout
 
@@ -106,7 +141,7 @@ BrushCoach.xcodeproj
     ├── Sources/BrushKit/
     │   ├── Models/             sessions, handedness, routine day, motion samples, trace JSON
     │   ├── Pipeline/           resampler, windows, feature extraction
-    │   ├── Classification/     activity detector, position change, unwired zone classifier
+    │   ├── Classification/     activity detector, position change, calibration, zone classifier
     │   ├── Session/            SessionClock, RoutineTimeline, LiveSessionAnalyzer
     │   └── Storage/            local session repository
     ├── Sources/BrushReplay/    offline replay and separability CLI
@@ -235,11 +270,11 @@ These are open, not hidden:
 
 - **The activity thresholds have never seen real data.** See
   [Validating the thresholds](#validating-the-thresholds). This is the top open item.
-- **The six-zone classifier is still unwired.** `PersonalCalibrationBuilder` and
-  `PersonalZoneClassifier` are unit-tested against synthetic signals only, and no calibration UI
-  exists. Wiring them is gated on the separability result above: six-way zone classification is
-  strictly harder than the two-way question, so if idle does not separate cleanly from brushing on
-  real traces, zones will not either.
+- **Six-zone estimation has never been checked against ground truth.** It is wired and usable, but
+  its accuracy is unmeasured: `PersonalCalibrationBuilder` and `PersonalZoneClassifier` are
+  unit-tested against synthetic signals only, and the calibration score measures separability of the
+  captures, not correctness of later estimates. Zone classification is strictly harder than the
+  two-way activity question, which is itself unvalidated — treat any zone read as a hypothesis.
 - **watchOS cannot do passive detection.** Continuously running a watchOS app in the background is
   not a supported use case, and borrowing a workout session in a non-workout app risks App Review
   rejection. Sessions stay user-initiated; the app uses the `self-care` background mode, which is the

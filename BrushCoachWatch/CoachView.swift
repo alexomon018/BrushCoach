@@ -32,7 +32,7 @@ struct CoachView: View {
             if case .ready = model.phase {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
-                        WatchMoreView()
+                        WatchMoreView(model: model)
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -178,6 +178,16 @@ private struct ActiveBrushView: View {
                     .font(.system(size: compact ? 9 : 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(1)
+                // Shown only when the calibrated classifier is confident, and
+                // only as a read-out of where it thinks you are — the prompt
+                // above is still what the session is pacing.
+                if let zone = model.liveZone {
+                    Text(zone == model.scheduledZone ? "matches" : zone.displayName.lowercased())
+                        .font(.system(size: compact ? 8 : 9, weight: .medium, design: .rounded))
+                        .foregroundStyle(zone == model.scheduledZone ? Color.watchMint : Color.watchBlue)
+                        .lineLimit(1)
+                        .transition(.opacity)
+                }
             }
         }
         .frame(width: size, height: size)
@@ -260,6 +270,14 @@ private struct CompletionView: View {
                 }
             }
 
+            if let agreement = formattedAgreement {
+                Text(agreement)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.watchBlue)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+
             if let note = sensingNote {
                 Text(note)
                     .font(.system(size: 9, weight: .medium))
@@ -297,6 +315,21 @@ private struct CompletionView: View {
     private var formattedBrushingTime: String? {
         guard let seconds = summary.session.activeBrushingSeconds else { return nil }
         return Duration.seconds(seconds.rounded()).formatted(.time(pattern: .minuteSecond))
+    }
+
+    /// Prompt agreement, not accuracy: it cannot separate "you followed the
+    /// prompt" from "the classifier agrees". Hidden entirely below a handful of
+    /// confident windows, where the ratio would be noise.
+    private var formattedAgreement: String? {
+        guard let analysis = summary.session.analysis, analysis.zoneEstimationAttempted else { return nil }
+        guard analysis.confidentZoneWindows >= 5, let agreement = analysis.zoneAgreement else {
+            // Calibrated, but nothing was confident enough to report. Saying so
+            // is the difference between a feature that looks broken and one the
+            // user understands is being cautious.
+            return "No confident zone reads · experimental"
+        }
+        let percent = (agreement * 100).formatted(.number.precision(.fractionLength(0)))
+        return "\(percent)% prompt agreement · experimental"
     }
 
     /// Explains a missing brushing time rather than leaving a silent gap.
@@ -355,6 +388,8 @@ private struct FailureView: View {
 }
 
 private struct WatchMoreView: View {
+    @Bindable var model: CoachViewModel
+
     var body: some View {
         List {
             Section("Technique") {
@@ -362,6 +397,24 @@ private struct WatchMoreView: View {
                 Label("Soft bristles", systemImage: "leaf.fill")
                 Label("Gentle pressure", systemImage: "hand.raised.fill")
                 Label("45° to gumline", systemImage: "angle")
+            }
+            Section("Stroke checking") {
+                NavigationLink {
+                    CalibrationView()
+                } label: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(model.hasCalibration ? "Recalibrate" : "Calibrate zones")
+                        Text(model.hasCalibration ? "Experimental · already set up" : "Experimental · about 3 minutes")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(!model.capability.canSenseMotion)
+                if !model.capability.canSenseMotion {
+                    Text(model.capability.explanation)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
             }
             Section("Developer") {
                 NavigationLink("Motion capture") { RecordingView() }
@@ -423,11 +476,4 @@ private struct WatchDentalArch: View {
         if index == active { return .watchBlue }
         return .white.opacity(0.13)
     }
-}
-
-private extension Color {
-    static let watchInk = Color(red: 0.027, green: 0.102, blue: 0.141)
-    static let watchBlue = Color(red: 0.23, green: 0.69, blue: 0.86)
-    static let watchMint = Color(red: 0.498, green: 0.878, blue: 0.765)
-    static let watchCoral = Color(red: 0.98, green: 0.41, blue: 0.37)
 }

@@ -23,13 +23,33 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
     /// brush" and must be reported differently.
     public var windowCount: Int
 
+    /// Brushing windows whose zone estimate cleared the confidence threshold.
+    /// Zero when no calibration profile was loaded.
+    public var confidentZoneWindows: Int
+
+    /// Of those confident windows, the fraction whose estimated zone matched the
+    /// zone the pacer was prompting. Deliberately named agreement, not accuracy:
+    /// it measures whether the user followed the prompt *and* whether the
+    /// classifier agrees, and cannot separate the two. `nil` when nothing was
+    /// confident enough to compare.
+    public var zoneAgreement: Double?
+
+    /// Whether a calibration profile was loaded and zone estimation actually
+    /// ran. Distinguishes "not calibrated" from "calibrated but never
+    /// confident" — which are the same zero to a reader, and completely
+    /// different things to diagnose.
+    public var zoneEstimationAttempted: Bool
+
     public init(
         activeBrushingSeconds: TimeInterval = 0,
         fastStrokeSeconds: TimeInterval = 0,
         positionChanges: Int = 0,
         longestSinglePositionSeconds: TimeInterval = 0,
         medianStrokeRatePerMinute: Double = 0,
-        windowCount: Int = 0
+        windowCount: Int = 0,
+        confidentZoneWindows: Int = 0,
+        zoneAgreement: Double? = nil,
+        zoneEstimationAttempted: Bool = false
     ) {
         self.activeBrushingSeconds = max(0, activeBrushingSeconds)
         self.fastStrokeSeconds = max(0, fastStrokeSeconds)
@@ -37,6 +57,9 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
         self.longestSinglePositionSeconds = max(0, longestSinglePositionSeconds)
         self.medianStrokeRatePerMinute = max(0, medianStrokeRatePerMinute)
         self.windowCount = max(0, windowCount)
+        self.confidentZoneWindows = max(0, confidentZoneWindows)
+        self.zoneAgreement = zoneAgreement.map { min(1, max(0, $0)) }
+        self.zoneEstimationAttempted = zoneEstimationAttempted
     }
 
     /// True when too little motion arrived to say anything. Report this as
@@ -46,6 +69,10 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
 
 public enum SessionInsight: Hashable, Sendable {
     case activityChanged(MotionActivity)
+    /// A zone estimate that cleared the confidence threshold. Never emitted
+    /// without a calibration profile, and never emitted below the threshold —
+    /// a low-confidence guess is worse than silence.
+    case zoneEstimated(BrushZoneLabel, confidence: Double)
     case positionChanged(total: Int)
     case strokeRateHigh(ratePerMinute: Double)
     case heldOnePositionTooLong(seconds: TimeInterval)
@@ -59,17 +86,28 @@ public struct LiveSessionAnalyzerConfiguration: Hashable, Sendable {
     /// trips it.
     public var singlePositionNudgeSeconds: TimeInterval
     public var positionChangeThresholdDegrees: Double
+    /// Zone estimates below this are discarded rather than shown.
+    ///
+    /// The trade-off is real in both directions: too low and a confidently wrong
+    /// zone teaches users to distrust the app; too high and the feature never
+    /// fires, which teaches its author nothing. This default deliberately errs
+    /// toward firing during the experimental period, and `SessionAnalysis`
+    /// records whether estimation ran at all so a silent session can be told
+    /// apart from an uncalibrated one.
+    public var zoneConfidenceThreshold: Double
 
     public init(
         activity: ActivityDetectorConfiguration = ActivityDetectorConfiguration(),
         highStrokeRatePerMinute: Double = 240,
         singlePositionNudgeSeconds: TimeInterval = 28,
-        positionChangeThresholdDegrees: Double = 25
+        positionChangeThresholdDegrees: Double = 25,
+        zoneConfidenceThreshold: Double = 0.35
     ) {
         self.activity = activity
         self.highStrokeRatePerMinute = highStrokeRatePerMinute
         self.singlePositionNudgeSeconds = singlePositionNudgeSeconds
         self.positionChangeThresholdDegrees = positionChangeThresholdDegrees
+        self.zoneConfidenceThreshold = zoneConfidenceThreshold
     }
 }
 
@@ -93,8 +131,14 @@ public struct LiveSessionAnalyzer: Sendable {
     private var nudgedForCurrentPosition = false
     private var analysis = SessionAnalysis()
 
+    private let zoneClassifier: PersonalZoneClassifier?
+    private var smoother = PredictionSmoother(capacity: 3)
+    private var zoneMatches = 0
+    private var latestZone: BrushZoneLabel?
+
     public init(
         configuration: LiveSessionAnalyzerConfiguration = LiveSessionAnalyzerConfiguration(),
+        profile: PersonalCalibrationProfile? = nil,
         pipeline: MotionPipeline = MotionPipeline()
     ) {
         self.configuration = configuration
@@ -103,9 +147,17 @@ public struct LiveSessionAnalyzer: Sendable {
         self.position = PositionChangeDetector(
             changeThresholdDegrees: configuration.positionChangeThresholdDegrees
         )
+        self.zoneClassifier = profile.map(PersonalZoneClassifier.init(profile:))
+        self.analysis.zoneEstimationAttempted = profile != nil
     }
 
     public var currentActivity: MotionActivity { latestActivity }
+
+    /// The most recent zone estimate that cleared the confidence threshold, or
+    /// `nil` when there is no profile or nothing confident to show.
+    public var currentZone: BrushZoneLabel? { latestZone }
+
+    public var isEstimatingZones: Bool { zoneClassifier != nil }
 
     public var currentAnalysis: SessionAnalysis {
         var output = analysis
@@ -114,6 +166,15 @@ public struct LiveSessionAnalyzer: Sendable {
     }
 
     public mutating func ingest(_ sample: MotionSample) -> [SessionInsight] {
+        ingest(sample, scheduledZone: nil)
+    }
+
+    /// `scheduledZone` is the zone the pacer is currently prompting. Passing it
+    /// enables agreement scoring; it never influences the estimate itself.
+    public mutating func ingest(
+        _ sample: MotionSample,
+        scheduledZone: BrushZoneLabel?
+    ) -> [SessionInsight] {
         var insights: [SessionInsight] = []
 
         for features in pipeline.append(sample) {
@@ -138,6 +199,9 @@ public struct LiveSessionAnalyzer: Sendable {
             if reading.activity == .brushing {
                 analysis.activeBrushingSeconds += elapsed
                 strokeRates.append(reading.strokeRatePerMinute)
+                if let insight = estimateZone(features, scheduledZone: scheduledZone) {
+                    insights.append(insight)
+                }
                 if reading.strokeRatePerMinute > configuration.highStrokeRatePerMinute {
                     analysis.fastStrokeSeconds += elapsed
                     insights.append(.strokeRateHigh(ratePerMinute: reading.strokeRatePerMinute))
@@ -164,8 +228,34 @@ public struct LiveSessionAnalyzer: Sendable {
         return insights
     }
 
-    public mutating func ingest(_ samples: [MotionSample]) -> [SessionInsight] {
-        samples.flatMap { ingest($0) }
+    public mutating func ingest(
+        _ samples: [MotionSample],
+        scheduledZone: BrushZoneLabel? = nil
+    ) -> [SessionInsight] {
+        samples.flatMap { ingest($0, scheduledZone: scheduledZone) }
+    }
+
+    /// Runs the calibrated classifier, smooths across three windows, and reports
+    /// only what clears the confidence threshold. Below it the estimate is
+    /// dropped entirely rather than shown with a caveat: on a small watch face
+    /// nobody reads the caveat.
+    private mutating func estimateZone(
+        _ features: FeatureVector,
+        scheduledZone: BrushZoneLabel?
+    ) -> SessionInsight? {
+        guard let zoneClassifier, let prompted = scheduledZone else { return nil }
+        let smoothed = smoother.ingest(zoneClassifier.classify(features, scheduledZone: prompted))
+        guard smoothed.activity == .brushing,
+              let zone = smoothed.zone,
+              smoothed.confidence >= configuration.zoneConfidenceThreshold else {
+            latestZone = nil
+            return nil
+        }
+        latestZone = zone
+        analysis.confidentZoneWindows += 1
+        if zone == prompted { zoneMatches += 1 }
+        analysis.zoneAgreement = Double(zoneMatches) / Double(analysis.confidentZoneWindows)
+        return .zoneEstimated(zone, confidence: smoothed.confidence)
     }
 
     public mutating func reset() {
@@ -176,7 +266,10 @@ public struct LiveSessionAnalyzer: Sendable {
         previousWindowEnd = nil
         strokeRates.removeAll(keepingCapacity: true)
         nudgedForCurrentPosition = false
-        analysis = SessionAnalysis()
+        analysis = SessionAnalysis(zoneEstimationAttempted: zoneClassifier != nil)
+        smoother.reset()
+        zoneMatches = 0
+        latestZone = nil
     }
 
     private func median(of values: [Double]) -> Double {

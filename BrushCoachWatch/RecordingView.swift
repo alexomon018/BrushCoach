@@ -215,11 +215,3 @@ private struct Waveform: View {
         .accessibilityHidden(true)
     }
 }
-
-private extension Color {
-    static let captureInk = Color(red: 0.025, green: 0.055, blue: 0.09)
-    static let enamel = Color(red: 0.96, green: 0.98, blue: 0.99)
-    static let rinseBlue = Color(red: 0.23, green: 0.72, blue: 0.94)
-    static let recordCoral = Color(red: 1.0, green: 0.36, blue: 0.34)
-    static let mintSignal = Color(red: 0.38, green: 0.89, blue: 0.69)
-}

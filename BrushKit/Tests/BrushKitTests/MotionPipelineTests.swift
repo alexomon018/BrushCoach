@@ -126,7 +126,29 @@ final class MotionPipelineTests: XCTestCase {
 
         XCTAssertEqual(result.activity, .brushing)
         XCTAssertEqual(result.zone, .upperLeft)
-        XCTAssertGreaterThan(result.confidence, 0.8)
+        // The majority wins, but smoothing must not manufacture more certainty
+        // than the winning windows actually had.
+        XCTAssertGreaterThan(result.confidence, 0.5)
+        XCTAssertLessThanOrEqual(result.confidence, 0.8)
+    }
+
+    /// Vote share alone would call three unanimous coin-flips a certainty.
+    func testUnanimousButUnsurePredictionsStayUnsure() {
+        var smoother = PredictionSmoother(capacity: 3)
+        let unsure = ClassificationResult(
+            activity: .brushing,
+            zone: .lowerLeft,
+            side: .left,
+            jaw: .lower,
+            confidence: 0.12
+        )
+
+        _ = smoother.ingest(unsure)
+        _ = smoother.ingest(unsure)
+        let result = smoother.ingest(unsure)
+
+        XCTAssertEqual(result.zone, .lowerLeft)
+        XCTAssertLessThanOrEqual(result.confidence, 0.15)
     }
 
     private func sample(at timestamp: TimeInterval, accelerationX: Double) -> MotionSample {
