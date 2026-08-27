@@ -65,7 +65,6 @@ final class CoachViewModel {
         timeline.snapshot(elapsed: elapsed).zoneSecondsRemaining
     }
 
-    var totalSecondsRemaining: Int { max(0, Int(ceil(timeline.totalDuration - elapsed))) }
     var progress: Double { min(1, elapsed / timeline.totalDuration) }
 
     var zoneName: String {

@@ -42,10 +42,6 @@ struct BrushReplayCommand {
         var pipeline = MotionPipeline()
         let windows = pipeline.process(trace.samples)
 
-        let plan = SessionPlan(zones: [.upperRight, .upperCentre, .upperLeft, .lowerLeft, .lowerCentre, .lowerRight], secondsPerZone: 20)
-        var engine = SessionEngine(configuration: SessionEngineConfiguration(plan: plan))
-        let events = engine.ingest(trace.samples)
-
         var analyzer = LiveSessionAnalyzer()
         _ = analyzer.ingest(trace.samples)
         let analysis = analyzer.currentAnalysis
@@ -59,11 +55,9 @@ struct BrushReplayCommand {
             let energy = first["accel_spectral_energy"] ?? 0
             print("  first window: dominant \(format(frequency)) Hz, energy \(format(energy)), \(first.values.count) features")
         }
-        let classifications = events.reduce(0) { count, event in
-            if case .windowClassified = event { count + 1 } else { count }
-        }
-        print("  engine: \(events.count) events (\(classifications) classified windows)")
-        print("  analysis: \(format(analysis.activeBrushingSeconds)) s active, \(analysis.positionChanges) position changes, median \(format(analysis.medianStrokeRatePerMinute)) strokes/min")
+        print("  analysis: \(format(analysis.activeBrushingSeconds)) s active, \(format(analysis.fastStrokeSeconds)) s fast")
+        print("            \(analysis.positionChanges) position changes, longest hold \(format(analysis.longestSinglePositionSeconds)) s")
+        print("            median \(format(analysis.medianStrokeRatePerMinute)) strokes/min\(analysis.isInconclusive ? "  (INCONCLUSIVE)" : "")")
     }
 
     // MARK: - Separability
@@ -215,7 +209,7 @@ struct BrushReplayCommand {
         Usage: brush-replay [--separability] TRACE.json [TRACE.json ...]
 
         Replays labelled watch traces through BrushKit's timestamp-aware 50 Hz
-        MotionPipeline, SessionEngine, and LiveSessionAnalyzer.
+        MotionPipeline and LiveSessionAnalyzer.
 
           --separability   Pool the traces by label and report whether idle
                            separates from brushing, the best achievable energy

@@ -78,7 +78,11 @@ struct RoutineView: View {
     /// someone their strokes cannot be read is far better than reporting that
     /// they did not brush.
     private var strokeCheckingCard: some View {
-        let capability = settings.sensingCapability
+        let handedness = HandednessProfile(
+            watchWrist: settings.watchWrist,
+            brushingHand: settings.preferences.brushingHand
+        )
+        let capability = handedness.capability
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: capability.canSenseMotion ? "checkmark.seal.fill" : "info.circle.fill")
@@ -119,6 +123,17 @@ struct RoutineView: View {
                     Text("Your Watch reports it is on your \(wrist == .left ? "left" : "right") wrist.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    // Offered, never forced. Some people will happily switch
+                    // wrists to get stroke checking; most will not, and the app
+                    // works either way.
+                    if handedness.couldEnableBySwitchingWrist {
+                        Label(
+                            "Wear your Watch on your other wrist while brushing to turn stroke checking on.",
+                            systemImage: "arrow.left.arrow.right"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(Color.rinseBlue)
+                    }
                 } else {
                     Text("Open BrushCoach on your Watch once so it can report which wrist it is on.")
                         .font(.caption2)

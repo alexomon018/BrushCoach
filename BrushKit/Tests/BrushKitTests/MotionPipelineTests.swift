@@ -43,7 +43,7 @@ final class MotionPipelineTests: XCTestCase {
         XCTAssertEqual(windows[1].windowStart, 1, accuracy: 0.021)
     }
 
-    func testFixtureReplaysThroughPipelineAndSessionEngine() throws {
+    func testFixtureReplaysThroughPipelineAndAnalyzer() throws {
         let fixtureURL = try XCTUnwrap(Bundle.module.url(forResource: "short-trace", withExtension: "json", subdirectory: "Fixtures"))
         let trace = try TraceJSON.decoder().decode(
             LabelledMotionTrace.self,
@@ -52,15 +52,15 @@ final class MotionPipelineTests: XCTestCase {
         var pipeline = MotionPipeline(sampleRateHz: 5, windowDuration: 2, overlap: 0.5)
         XCTAssertEqual(pipeline.process(trace.samples).count, 1)
 
-        let plan = SessionPlan(zones: [.upperLeft, .lowerRight], secondsPerZone: 1.1)
-        var engine = SessionEngine(
-            configuration: SessionEngineConfiguration(plan: plan),
-            pipeline: MotionPipeline(sampleRateHz: 5, windowDuration: 2, overlap: 0.5)
-        )
-        let events = engine.ingest(trace.samples)
-        XCTAssertTrue(events.contains(.zoneAdvanced(from: .upperLeft, to: .lowerRight)))
-        XCTAssertTrue(events.contains(.completed))
-        XCTAssertTrue(events.contains { if case .windowClassified = $0 { true } else { false } })
+        // Recorded JSON has to survive a round trip into the analysis path, not
+        // just into the feature pipeline.
+        var analyzer = LiveSessionAnalyzer()
+        _ = analyzer.ingest(trace.samples)
+        let analysis = analyzer.currentAnalysis
+        XCTAssertGreaterThan(analysis.windowCount, 0)
+        // Two seconds of trace cannot support a conclusion, and the analyzer
+        // must say so rather than reporting zero.
+        XCTAssertTrue(analysis.isInconclusive)
     }
 
     func testPersonalCalibrationRecognizesIdleAndAZone() throws {

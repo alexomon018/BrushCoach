@@ -1,5 +1,21 @@
 import Foundation
 
+/// The zone sequence and per-zone duration a session follows.
+public struct SessionPlan: Codable, Hashable, Sendable {
+    public var zones: [BrushZoneLabel]
+    public var secondsPerZone: TimeInterval
+
+    public init(
+        zones: [BrushZoneLabel] = [.upperRight, .upperCentre, .upperLeft, .lowerLeft, .lowerCentre, .lowerRight],
+        secondsPerZone: TimeInterval = 20
+    ) {
+        precondition(!zones.isEmpty)
+        precondition(secondsPerZone > 0)
+        self.zones = zones
+        self.secondsPerZone = secondsPerZone
+    }
+}
+
 public struct RoutineTimelineSnapshot: Equatable, Sendable {
     public let elapsed: TimeInterval
     public let currentZoneIndex: Int

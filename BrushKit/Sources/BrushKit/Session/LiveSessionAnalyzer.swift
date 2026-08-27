@@ -76,10 +76,10 @@ public struct LiveSessionAnalyzerConfiguration: Hashable, Sendable {
 /// Drives the pipeline, activity detection, and position-change detection over a
 /// live session, accumulating a `SessionAnalysis` as it goes.
 ///
-/// Deliberately separate from `SessionEngine`: the engine owns pacing and zone
-/// scheduling, this owns observation. Keeping them apart is what lets the pacer
-/// stay pure wall-clock while analysis runs beside it, and it means an analysis
-/// bug can never desynchronise the timer.
+/// Deliberately separate from the pacer: `SessionClock` and `RoutineTimeline`
+/// own timing and zone scheduling, this owns observation. Keeping them apart is
+/// what lets the pacer stay pure wall-clock while analysis runs beside it, and
+/// it means an analysis bug can never desynchronise the timer.
 public struct LiveSessionAnalyzer: Sendable {
     public let configuration: LiveSessionAnalyzerConfiguration
 

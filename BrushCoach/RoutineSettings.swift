@@ -19,15 +19,6 @@ final class RoutineSettings {
         }
     }
 
-    /// What the iPhone can honestly say about stroke checking, combining the
-    /// Watch's own wrist reading with the hand the user told us about.
-    var sensingCapability: SensingCapability {
-        HandednessProfile(
-            watchWrist: watchWrist,
-            brushingHand: preferences.brushingHand
-        ).capability
-    }
-
     private let key = "routine-preferences-v1"
     private let wristKey = "watch-wrist-v1"
 

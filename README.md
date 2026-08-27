@@ -14,7 +14,7 @@ reports what it observed — without ever deciding whether the session counted.
 | Handedness fork and honest capability reporting | Wired and working |
 | Real brushing time, stroke rate, position change | **Wired, thresholds unvalidated** |
 | Labelled trace capture → phone inbox → export → replay CLI | Wired and working |
-| Personal calibration and six-zone classification (`BrushKit`) | Built and unit-tested, **not called by either app** |
+| Personal calibration and six-zone classification (`BrushKit`) | Built and unit-tested, **not called by either app**, gated on the separability result |
 
 Two caveats stated plainly, because the difference matters:
 
@@ -107,7 +107,7 @@ BrushCoach.xcodeproj
     │   ├── Models/             sessions, handedness, routine day, motion samples, trace JSON
     │   ├── Pipeline/           resampler, windows, feature extraction
     │   ├── Classification/     activity detector, position change, unwired zone classifier
-    │   ├── Session/            SessionClock, RoutineTimeline, SessionEngine, LiveSessionAnalyzer
+    │   ├── Session/            SessionClock, RoutineTimeline, LiveSessionAnalyzer
     │   └── Storage/            local session repository
     ├── Sources/BrushReplay/    offline replay and separability CLI
     └── Tests/BrushKitTests/    unit tests and trace fixture
@@ -193,8 +193,9 @@ swift run brush-replay /path/to/trace.json
 ```
 
 Pass several paths to compare a batch. The command prints raw duration and sample rate, feature-window
-count, first-window dominant frequency and energy, feature schema version/count, `SessionEngine` event
-totals, and the `LiveSessionAnalyzer` summary for that trace.
+count, first-window dominant frequency and energy, feature schema version/count, and the
+`LiveSessionAnalyzer` summary for that trace — active brushing seconds, fast-stroke seconds, position
+changes, longest single-position hold, and median stroke rate.
 
 ## Run tests
 
@@ -236,7 +237,9 @@ These are open, not hidden:
   [Validating the thresholds](#validating-the-thresholds). This is the top open item.
 - **The six-zone classifier is still unwired.** `PersonalCalibrationBuilder` and
   `PersonalZoneClassifier` are unit-tested against synthetic signals only, and no calibration UI
-  exists. `CalibrationProfileStore` persists a profile that nothing currently produces or consumes.
+  exists. Wiring them is gated on the separability result above: six-way zone classification is
+  strictly harder than the two-way question, so if idle does not separate cleanly from brushing on
+  real traces, zones will not either.
 - **watchOS cannot do passive detection.** Continuously running a watchOS app in the background is
   not a supported use case, and borrowing a workout session in a non-workout app risks App Review
   rejection. Sessions stay user-initiated; the app uses the `self-care` background mode, which is the
