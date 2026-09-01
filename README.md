@@ -146,7 +146,7 @@ BrushCoach.xcodeproj
     │   ├── Pipeline/           resampler, windows, feature extraction
     │   ├── Classification/     activity detector, position change, calibration, zone classifier
     │   ├── Session/            SessionClock, RoutineTimeline, LiveSessionAnalyzer
-    │   └── Storage/            local session repository
+    │   └── Storage/            local session database, repository boundary, JSON migration source
     ├── Sources/BrushReplay/    offline replay and separability CLI
     └── Tests/BrushKitTests/    unit tests and trace fixture
 ```
@@ -293,9 +293,15 @@ These are open, not hidden:
 - **No asset catalog, app icon, privacy manifest, or StoreKit integration.** These block App Store
   submission and are tracked separately from product work.
 
-## JSON and privacy
+## Local storage and trace privacy
 
-Each trace contains:
+Completed session history is stored on the iPhone in a local SwiftData database backed by SQLite.
+CloudKit is explicitly disabled. On first launch after this change, any existing
+`brush-sessions.json` history is imported automatically; the Watch still keeps its small local JSON
+copy until WatchConnectivity hands the session to the phone. Preferences remain in `UserDefaults`
+and the personal calibration profile remains in a Watch-local file.
+
+Motion traces are separate from session history. Each trace contains:
 
 - schema version, UUID, ISO-8601 recording date, label, requested rate/duration, and optional
   wrist/notes;

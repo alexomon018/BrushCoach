@@ -1,6 +1,7 @@
 import BrushKit
 import Foundation
 
+@MainActor
 enum WatchSessionStore {
     private static var repository: LocalSessionRepository {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -33,4 +34,3 @@ enum WatchRoutinePreferences {
 extension Notification.Name {
     static let brushCoachStartSessionRequested = Notification.Name("BrushCoachStartSessionRequested")
 }
-

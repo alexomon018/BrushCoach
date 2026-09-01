@@ -10,7 +10,7 @@ final class SessionStore {
     private(set) var sessions: [BrushSession] = []
     private(set) var lastError: String?
 
-    @ObservationIgnored private let repository: LocalSessionRepository
+    @ObservationIgnored private let repository: any SessionRepository
     @ObservationIgnored private let health = HealthKitWriter()
     @ObservationIgnored private var healthEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: "health-writing-enabled") }
@@ -20,8 +20,18 @@ final class SessionStore {
     private init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appending(path: "BrushCoach", directoryHint: .isDirectory)
-        repository = LocalSessionRepository(directory: base)
+        let databaseStartupError: String?
+        do {
+            repository = try LocalSessionDatabase(directory: base)
+            databaseStartupError = nil
+        } catch {
+            // Brushing must still work if the database cannot open. The JSON
+            // repository is also the source that a later healthy launch merges.
+            repository = LocalSessionRepository(directory: base)
+            databaseStartupError = "Local database unavailable; using fallback storage. \(error.localizedDescription)"
+        }
         reload()
+        if lastError == nil { lastError = databaseStartupError }
     }
 
     func reload() {

@@ -1,6 +1,8 @@
 import Foundation
 
-public struct LocalSessionRepository: Sendable {
+/// The original JSON repository. It remains available as the migration source
+/// and as a last-resort fallback if the local database cannot open.
+public struct LocalSessionRepository: SessionRepository, Sendable {
     public let fileURL: URL
 
     public init(directory: URL, filename: String = "brush-sessions.json") {
@@ -54,4 +56,3 @@ public struct LocalSessionRepository: Sendable {
         return decoder
     }()
 }
-
