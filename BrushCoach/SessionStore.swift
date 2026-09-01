@@ -70,6 +70,8 @@ final class SessionStore {
         }
     }
 
+    var isHealthAuthorized: Bool { health.isAuthorized }
+
     func requestHealthAccess() async -> Bool {
         let allowed = await health.requestAuthorization()
         healthEnabled = allowed

@@ -12,6 +12,14 @@ actor ReminderScheduler {
         (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
+    /// The answer as it stands right now, including one given during onboarding
+    /// or revoked later in Settings, so the Routine tab can show what is true
+    /// instead of staying blank until someone taps it.
+    func isAuthorized() async -> Bool {
+        let status = await center.notificationSettings().authorizationStatus
+        return status == .authorized || status == .provisional
+    }
+
     func refresh(preferences: RoutinePreferences, sessions: [BrushSession]) async {
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }

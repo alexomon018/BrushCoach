@@ -5,6 +5,9 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
     @State private var settings = RoutineSettings.shared
+    /// Blocks the footer while the notification prompt is on screen, so a second
+    /// tap cannot finish onboarding before the answer comes back.
+    @State private var isWorking = false
     let complete: () -> Void
 
     private static let pages: [OnboardingPage] = [
@@ -43,13 +46,31 @@ struct OnboardingView: View {
             body: "Your Watch already knows which wrist it's on. If that's your brushing hand, BrushCoach can check your strokes — if not, it will say so instead of guessing.",
             mood: .cheery,
             action: .brushing
+        ),
+        OnboardingPage(
+            kind: .schedule,
+            icon: "clock.fill",
+            eyebrow: "YOUR TWO MOMENTS",
+            title: "When do you brush?",
+            body: "Set the times that already fit your day. You can move them whenever they stop fitting.",
+            mood: .ready,
+            action: .idle
+        ),
+        OnboardingPage(
+            kind: .reminders,
+            icon: "bell.badge.fill",
+            eyebrow: "LAST STEP",
+            title: "A nudge, only when it's missing.",
+            body: "BrushCoach reminds you at those two times — and stays quiet for a brush you have already finished.",
+            mood: .proud,
+            action: .success
         )
     ]
 
     private var current: OnboardingPage { Self.pages[page] }
 
     private var canAdvance: Bool {
-        current.kind == .message || settings.preferences.brushingHand != nil
+        current.kind != .handedness || settings.preferences.brushingHand != nil
     }
 
     var body: some View {
@@ -60,23 +81,34 @@ struct OnboardingView: View {
                 Spacer(minLength: 0)
                 pageContent
                 Spacer(minLength: 0)
-                Button(primaryTitle, action: advance)
-                    .buttonStyle(PrimaryCapsuleButtonStyle())
-                    .disabled(!canAdvance)
-                    .opacity(canAdvance ? 1 : 0.4)
+                footer
             }
             .padding(24)
         }
+        // The app runs light, but this screen is full-bleed `deepInk`. Without
+        // this the system controls on the schedule page render for a light
+        // background and disappear into it.
+        .environment(\.colorScheme, .dark)
     }
 
     private var primaryTitle: String {
-        switch (page, current.kind) {
-        case (_, .handedness):
-            settings.preferences.brushingHand == nil ? "Choose a hand" : "Set up my routine"
-        case (Self.pages.count - 1, _):
-            "Set up my routine"
+        switch current.kind {
+        case .handedness:
+            settings.preferences.brushingHand == nil ? "Choose a hand" : "Continue"
+        case .reminders:
+            "Turn on reminders"
         default:
             "Continue"
+        }
+    }
+
+    /// The way past a step without answering it. Both steps that have one are
+    /// recoverable from the Routine tab, so neither is worth a dead end here.
+    private var secondaryTitle: String? {
+        switch current.kind {
+        case .handedness: "Set this later"
+        case .reminders: "Not now"
+        default: nil
         }
     }
 
@@ -95,11 +127,26 @@ struct OnboardingView: View {
         }
     }
 
+    private var footer: some View {
+        VStack(spacing: 14) {
+            Button(primaryTitle, action: advance)
+                .buttonStyle(PrimaryCapsuleButtonStyle())
+                .disabled(!canAdvance || isWorking)
+                .opacity(canAdvance ? 1 : 0.4)
+            if let secondaryTitle {
+                Button(secondaryTitle, action: skip)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .disabled(isWorking)
+            }
+        }
+    }
+
     private var pageContent: some View {
         VStack(spacing: 20) {
             ToothMascotView(mood: current.mood, action: current.action, darkBackdrop: true)
-                .frame(width: current.kind == .handedness ? 96 : 132,
-                       height: current.kind == .handedness ? 102 : 140)
+                .frame(width: current.isCompact ? 96 : 132,
+                       height: current.isCompact ? 102 : 140)
             if current.kind == .message {
                 Image(systemName: current.icon)
                     .font(.system(size: 25, weight: .medium))
@@ -111,18 +158,20 @@ struct OnboardingView: View {
                     .tracking(1.5)
                     .foregroundStyle(Color.rinseBlue)
                 Text(current.title)
-                    .font(.system(size: current.kind == .handedness ? 32 : 38,
+                    .font(.system(size: current.isCompact ? 32 : 38,
                                   weight: .semibold, design: .serif))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white)
                 Text(current.body)
-                    .font(current.kind == .handedness ? .subheadline : .body)
+                    .font(current.isCompact ? .subheadline : .body)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white.opacity(0.68))
                     .lineSpacing(3)
             }
-            if current.kind == .handedness {
-                handChoice
+            switch current.kind {
+            case .handedness: handChoice
+            case .schedule: scheduleChoice
+            case .message, .reminders: EmptyView()
             }
         }
         .id(page)
@@ -146,13 +195,110 @@ struct OnboardingView: View {
         .padding(.top, 4)
     }
 
+    /// Pre-filled with the defaults, so accepting the whole schedule is one tap.
+    private var scheduleChoice: some View {
+        VStack(spacing: 10) {
+            OnboardingScheduleRow(
+                period: .morning,
+                enabled: $settings.preferences.morningEnabled,
+                time: morningTime
+            )
+            OnboardingScheduleRow(
+                period: .evening,
+                enabled: $settings.preferences.eveningEnabled,
+                time: eveningTime
+            )
+        }
+        .padding(.top, 4)
+    }
+
     private func advance() {
-        guard canAdvance else { return }
-        guard page < Self.pages.count - 1 else {
+        guard canAdvance, !isWorking else { return }
+        guard current.kind != .reminders else {
+            isWorking = true
+            Task { @MainActor in
+                _ = await ReminderScheduler.shared.requestAuthorization()
+                // Authorization alone schedules nothing: `refresh` bails out
+                // while unauthorized, so the routine has to be applied again
+                // once the answer is in.
+                await settings.apply()
+                isWorking = false
+                complete()
+            }
+            return
+        }
+        withAnimation(.spring(response: 0.52, dampingFraction: 0.84)) { page += 1 }
+    }
+
+    private func skip() {
+        guard !isWorking else { return }
+        guard current.kind != .reminders else {
             complete()
             return
         }
         withAnimation(.spring(response: 0.52, dampingFraction: 0.84)) { page += 1 }
+    }
+
+    private var morningTime: Binding<Date> {
+        timeBinding(hour: settings.preferences.morningHour, minute: settings.preferences.morningMinute) { hour, minute in
+            settings.preferences.morningHour = hour
+            settings.preferences.morningMinute = minute
+        }
+    }
+
+    private var eveningTime: Binding<Date> {
+        timeBinding(hour: settings.preferences.eveningHour, minute: settings.preferences.eveningMinute) { hour, minute in
+            settings.preferences.eveningHour = hour
+            settings.preferences.eveningMinute = minute
+        }
+    }
+
+    private func timeBinding(hour: Int, minute: Int, update: @escaping (Int, Int) -> Void) -> Binding<Date> {
+        Binding {
+            Calendar.current.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: hour, minute: minute)) ?? .now
+        } set: { value in
+            update(Calendar.current.component(.hour, from: value), Calendar.current.component(.minute, from: value))
+        }
+    }
+}
+
+private struct OnboardingScheduleRow: View {
+    let period: RoutinePeriod
+    @Binding var enabled: Bool
+    @Binding var time: Date
+
+    var body: some View {
+        HStack(spacing: 13) {
+            Image(systemName: period == .morning ? "sun.max.fill" : "moon.stars.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(enabled ? Color.mintFresh : .white.opacity(0.35))
+                .frame(width: 38, height: 38)
+                .background(.white.opacity(enabled ? 0.12 : 0.05), in: Circle())
+            Text(period.displayName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(enabled ? .white : .white.opacity(0.45))
+            Spacer(minLength: 4)
+            if enabled {
+                DatePicker("\(period.displayName) reminder time", selection: $time, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+            }
+            Toggle("\(period.displayName) reminder", isOn: $enabled)
+                .labelsHidden()
+                .tint(Color.mintDeep)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.white.opacity(0.08))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(.white.opacity(0.16), lineWidth: 1)
+        }
+        .animation(.snappy(duration: 0.28), value: enabled)
+        .sensoryFeedback(.selection, trigger: enabled)
     }
 }
 
@@ -164,7 +310,7 @@ private struct HandChoiceButton: View {
     var body: some View {
         Button(action: select) {
             VStack(spacing: 8) {
-                Image(systemName: hand == .left ? "hand.raised.fill" : "hand.raised.fill")
+                Image(systemName: "hand.raised.fill")
                     .font(.system(size: 22, weight: .medium))
                     .scaleEffect(x: hand == .left ? -1 : 1)
                 Text(hand.displayName)
@@ -188,7 +334,7 @@ private struct HandChoiceButton: View {
 }
 
 private struct OnboardingPage {
-    enum Kind { case message, handedness }
+    enum Kind { case message, handedness, schedule, reminders }
 
     let kind: Kind
     let icon: String
@@ -197,4 +343,8 @@ private struct OnboardingPage {
     let body: String
     let mood: ToothMood
     let action: ToothAction
+
+    /// Pages carrying controls give the type less room so the controls fit
+    /// without the layout having to scroll.
+    var isCompact: Bool { kind != .message }
 }
