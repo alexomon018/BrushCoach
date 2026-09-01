@@ -19,6 +19,9 @@ struct TodayView: View {
                 .companionPageFrame()
             }
             .background(Color.enamelWash.ignoresSafeArea())
+            // The hero card already carries the date, the greeting and the
+            // brand. A bar repeating the app name above it is chrome that only
+            // costs vertical room and draws a hairline across the card.
             .toolbar(.hidden, for: .navigationBar)
         }
     }

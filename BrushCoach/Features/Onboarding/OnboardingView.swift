@@ -4,14 +4,74 @@ import SwiftUI
 struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var step = 0
+    @State private var page = 0
     @State private var settings = RoutineSettings.shared
+    /// Blocks the footer while the notification prompt is on screen, so a second
+    /// tap cannot finish onboarding before the answer comes back.
+    @State private var isWorking = false
     let complete: () -> Void
 
-    private static let stepCount = 3
+    private static let pages: [OnboardingPage] = [
+        OnboardingPage(
+            kind: .message,
+            icon: "timer",
+            eyebrow: "THE ROUTINE",
+            title: "Two minutes. Twice daily.",
+            body: "Six zones keep the full mouth moving, with a clear haptic every 20 seconds.",
+            mood: .ready,
+            action: .idle
+        ),
+        OnboardingPage(
+            kind: .message,
+            icon: "angle",
+            eyebrow: "THE TECHNIQUE",
+            title: "Meet the gumline gently.",
+            body: "Use fluoride toothpaste and a soft-bristled brush. Hold it around 45° and move in short, gentle strokes.",
+            mood: .cheery,
+            action: .brushing
+        ),
+        OnboardingPage(
+            kind: .message,
+            icon: "applewatch",
+            eyebrow: "THE COACH",
+            title: "Lower your wrist. Keep brushing.",
+            body: "The Watch session follows real elapsed time, even when the display sleeps. Your history stays local and can be written to Apple Health.",
+            mood: .proud,
+            action: .protection
+        ),
+        OnboardingPage(
+            kind: .handedness,
+            icon: "hand.raised.fill",
+            eyebrow: "ONE QUESTION",
+            title: "Which hand holds the brush?",
+            body: "Your Watch already knows which wrist it's on. If that's your brushing hand, BrushCoach can check your strokes — if not, it will say so instead of guessing.",
+            mood: .cheery,
+            action: .brushing
+        ),
+        OnboardingPage(
+            kind: .schedule,
+            icon: "clock.fill",
+            eyebrow: "YOUR TWO MOMENTS",
+            title: "When do you brush?",
+            body: "Set the times that already fit your day. You can move them whenever they stop fitting.",
+            mood: .ready,
+            action: .idle
+        ),
+        OnboardingPage(
+            kind: .reminders,
+            icon: "bell.badge.fill",
+            eyebrow: "LAST STEP",
+            title: "A nudge, only when it's missing.",
+            body: "BrushCoach reminds you at those two times — and stays quiet for a brush you have already finished.",
+            mood: .proud,
+            action: .success
+        )
+    ]
+
+    private var current: OnboardingPage { Self.pages[page] }
 
     private var canAdvance: Bool {
-        step != 1 || settings.preferences.brushingHand != nil
+        current.kind != .handedness || settings.preferences.brushingHand != nil
     }
 
     var body: some View {
@@ -29,17 +89,17 @@ struct OnboardingView: View {
                 }
                 .scrollIndicators(.hidden)
 
-                Button(primaryTitle, action: advance)
-                    .buttonStyle(CompanionPrimaryButtonStyle())
-                    .disabled(!canAdvance)
-                    .accessibilityHint(step == 1 && !canAdvance ? "Choose your brushing hand first" : "")
+                footer
             }
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, horizontalSizeClass == .regular ? 28 : 24)
             .padding(.vertical, 16)
         }
-        .preferredColorScheme(.dark)
+        // The app runs light, but this screen is full-bleed `deepInk`. Without
+        // this the system controls on the schedule page render for a light
+        // background and disappear into it.
+        .environment(\.colorScheme, .dark)
     }
 
     private var onboardingBackground: some View {
@@ -60,10 +120,31 @@ struct OnboardingView: View {
         .ignoresSafeArea()
     }
 
+    private var primaryTitle: String {
+        switch current.kind {
+        case .handedness:
+            settings.preferences.brushingHand == nil ? "Choose a hand" : "Continue"
+        case .reminders:
+            "Turn on reminders"
+        default:
+            "Continue"
+        }
+    }
+
+    /// The way past a step without answering it. Both steps that have one are
+    /// recoverable from the Routine tab, so neither is worth a dead end here.
+    private var secondaryTitle: String? {
+        switch current.kind {
+        case .handedness: "Set this later"
+        case .reminders: "Not now"
+        default: nil
+        }
+    }
+
     private var progressHeader: some View {
         VStack(spacing: 12) {
             HStack {
-                if step > 0 {
+                if page > 0 {
                     Button(action: goBack) {
                         Image(systemName: "chevron.left")
                             .font(.subheadline.weight(.bold))
@@ -71,6 +152,7 @@ struct OnboardingView: View {
                             .background(.white.opacity(0.08), in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(isWorking)
                     .accessibilityLabel("Previous step")
                 } else {
                     Label("BRUSHCOACH", systemImage: "sparkles")
@@ -81,7 +163,7 @@ struct OnboardingView: View {
 
                 Spacer()
 
-                Text("\(step + 1) OF \(Self.stepCount)")
+                Text("\(page + 1) OF \(Self.pages.count)")
                     .font(.caption2.weight(.bold).monospacedDigit())
                     .tracking(1)
                     .foregroundStyle(.white.opacity(0.56))
@@ -89,75 +171,73 @@ struct OnboardingView: View {
             .frame(height: 34)
 
             HStack(spacing: 7) {
-                ForEach(0..<Self.stepCount, id: \.self) { index in
+                ForEach(Self.pages.indices, id: \.self) { index in
                     Capsule()
-                        .fill(index <= step ? Color.mintFresh : .white.opacity(0.14))
+                        .fill(index <= page ? Color.mintFresh : .white.opacity(0.14))
                         .frame(height: 6)
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Step \(step + 1) of \(Self.stepCount)")
+            .accessibilityLabel("Step \(page + 1) of \(Self.pages.count)")
         }
     }
 
-    @ViewBuilder
-    private var pageContent: some View {
-        Group {
-            switch step {
-            case 0: welcomeStep
-            case 1: handStep
-            default: readyStep
+    private var footer: some View {
+        VStack(spacing: 14) {
+            Button(primaryTitle, action: advance)
+                .buttonStyle(CompanionPrimaryButtonStyle())
+                .disabled(!canAdvance || isWorking)
+                .accessibilityHint(current.kind == .handedness && !canAdvance ? "Choose your brushing hand first" : "")
+            if let secondaryTitle {
+                Button(secondaryTitle, action: skip)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .disabled(isWorking)
             }
         }
-        .id(step)
+    }
+
+    private var pageContent: some View {
+        VStack(spacing: 20) {
+            ToothMascotView(mood: current.mood, action: current.action, darkBackdrop: true)
+                .frame(width: current.isCompact ? 96 : 132,
+                       height: current.isCompact ? 102 : 140)
+            if current.kind == .message {
+                Image(systemName: current.icon)
+                    .font(.system(size: 25, weight: .medium))
+                    .foregroundStyle(Color.mintFresh)
+            }
+            VStack(spacing: 11) {
+                Text(current.eyebrow)
+                    .font(.companionEyebrow)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.rinseBlue)
+                Text(current.title)
+                    .font(.system(size: current.isCompact ? 32 : 36,
+                                  weight: .semibold, design: .serif))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+                Text(current.body)
+                    .font(current.isCompact ? .subheadline : .body)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white.opacity(0.68))
+                    .lineSpacing(3)
+            }
+            switch current.kind {
+            case .handedness: handChoice
+            case .schedule: scheduleChoice
+            case .message, .reminders: EmptyView()
+            }
+        }
+        .id(page)
         .transition(reduceMotion ? .opacity : .asymmetric(
             insertion: .move(edge: .trailing).combined(with: .opacity),
             removal: .move(edge: .leading).combined(with: .opacity)
         ))
     }
 
-    private var welcomeStep: some View {
-        VStack(spacing: 22) {
-            ToothMascotView(mood: .ready, action: .idle, darkBackdrop: true)
-                .frame(width: 148, height: 154)
-
-            onboardingCopy(
-                eyebrow: "YOUR WRIST-SIZED COACH",
-                title: "Two minutes that stay on track.",
-                body: "BrushCoach guides the pace so you can focus on gentle, thorough brushing."
-            )
-
-            HStack(spacing: 10) {
-                OnboardingStat(value: "2 min", label: "total", systemImage: "timer")
-                OnboardingStat(value: "6", label: "zones", systemImage: "circle.hexagongrid.fill")
-                OnboardingStat(value: "20 sec", label: "each", systemImage: "applewatch.radiowaves.left.and.right")
-            }
-        }
-    }
-
-    private var handStep: some View {
-        VStack(spacing: 20) {
-            ToothMascotView(mood: .cheery, action: .brushing, darkBackdrop: true)
-                .frame(width: 96, height: 102)
-
-            VStack(spacing: 10) {
-                Text("REQUIRED · ONE QUESTION")
-                    .font(.companionEyebrow)
-                    .tracking(1.35)
-                    .foregroundStyle(Color.mintFresh)
-
-                Text("Which hand holds your brush?")
-                    .font(.system(size: 32, weight: .semibold, design: .serif))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
-
-                Text("This tells BrushCoach when your Watch can check strokes—and when it should simply guide the pace.")
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.68))
-                    .lineSpacing(3)
-            }
-
+    private var handChoice: some View {
+        VStack(spacing: 14) {
             HStack(spacing: 12) {
                 ForEach(BrushingHand.allCases, id: \.self) { hand in
                     HandChoiceButton(
@@ -175,145 +255,118 @@ struct OnboardingView: View {
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.52))
         }
+        .padding(.top, 4)
     }
 
-    private var readyStep: some View {
-        VStack(spacing: 20) {
-            ToothMascotView(mood: .proud, action: .success, darkBackdrop: true)
-                .frame(width: 116, height: 122)
-
-            onboardingCopy(
-                eyebrow: "READY WHEN YOU ARE",
-                title: "Your routine is ready.",
-                body: "Start from iPhone or Watch. Your wrist handles the pacing and your progress returns here."
+    /// Pre-filled with the defaults, so accepting the whole schedule is one tap.
+    private var scheduleChoice: some View {
+        VStack(spacing: 10) {
+            OnboardingScheduleRow(
+                period: .morning,
+                enabled: $settings.preferences.morningEnabled,
+                time: morningTime
             )
-
-            VStack(spacing: 0) {
-                ReadyRow(systemImage: "applewatch", title: "Guided on Watch", detail: "A gentle tap moves to each zone")
-                Divider().overlay(.white.opacity(0.1))
-                ReadyRow(systemImage: "moon.zzz.fill", title: "Wrist-down reliable", detail: "The timer follows real elapsed time")
-                Divider().overlay(.white.opacity(0.1))
-                ReadyRow(systemImage: "iphone.gen3", title: "Saved on iPhone", detail: "History stays private and close by")
-            }
-            .padding(.horizontal, 16)
-            .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(.white.opacity(0.1), lineWidth: 1)
-            }
-
-            VStack(spacing: 3) {
-                Text("OPTIONAL, LATER")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.rinseBlue)
-                Text("Add reminders, Apple Health, or experimental calibration only when they are useful to you.")
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.52))
-            }
+            OnboardingScheduleRow(
+                period: .evening,
+                enabled: $settings.preferences.eveningEnabled,
+                time: eveningTime
+            )
         }
-    }
-
-    private func onboardingCopy(eyebrow: String, title: String, body: String) -> some View {
-        VStack(spacing: 11) {
-            Text(eyebrow)
-                .font(.companionEyebrow)
-                .tracking(1.4)
-                .foregroundStyle(Color.rinseBlue)
-            Text(title)
-                .font(.system(size: 36, weight: .semibold, design: .serif))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
-            Text(body)
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white.opacity(0.68))
-                .lineSpacing(3)
-        }
-    }
-
-    private var primaryTitle: String {
-        switch step {
-        case 0: "See how it works"
-        case 1: settings.preferences.brushingHand == nil ? "Choose a hand" : "Use this hand"
-        default: "Open BrushCoach"
-        }
+        .padding(.top, 4)
     }
 
     private func advance() {
-        guard canAdvance else { return }
-        guard step < Self.stepCount - 1 else {
+        guard canAdvance, !isWorking else { return }
+        guard current.kind != .reminders else {
+            isWorking = true
+            Task { @MainActor in
+                _ = await ReminderScheduler.shared.requestAuthorization()
+                // Authorization alone schedules nothing: `refresh` bails out
+                // while unauthorized, so the routine has to be applied again
+                // once the answer is in.
+                await settings.apply()
+                isWorking = false
+                complete()
+            }
+            return
+        }
+        withAnimation(.spring(response: 0.52, dampingFraction: 0.84)) { page += 1 }
+    }
+
+    private func skip() {
+        guard !isWorking else { return }
+        guard current.kind != .reminders else {
             complete()
             return
         }
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) {
-            step += 1
-        }
+        withAnimation(.spring(response: 0.52, dampingFraction: 0.84)) { page += 1 }
     }
 
     private func goBack() {
-        guard step > 0 else { return }
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) {
-            step -= 1
+        guard page > 0, !isWorking else { return }
+        withAnimation(.spring(response: 0.52, dampingFraction: 0.84)) { page -= 1 }
+    }
+
+    private var morningTime: Binding<Date> {
+        timeBinding(hour: settings.preferences.morningHour, minute: settings.preferences.morningMinute) { hour, minute in
+            settings.preferences.morningHour = hour
+            settings.preferences.morningMinute = minute
+        }
+    }
+
+    private var eveningTime: Binding<Date> {
+        timeBinding(hour: settings.preferences.eveningHour, minute: settings.preferences.eveningMinute) { hour, minute in
+            settings.preferences.eveningHour = hour
+            settings.preferences.eveningMinute = minute
+        }
+    }
+
+    private func timeBinding(hour: Int, minute: Int, update: @escaping (Int, Int) -> Void) -> Binding<Date> {
+        Binding {
+            Calendar.current.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: hour, minute: minute)) ?? .now
+        } set: { value in
+            update(Calendar.current.component(.hour, from: value), Calendar.current.component(.minute, from: value))
         }
     }
 }
 
-private struct OnboardingStat: View {
-    let value: String
-    let label: String
-    let systemImage: String
-
-    var body: some View {
-        VStack(spacing: 7) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color.mintFresh)
-            VStack(spacing: 1) {
-                Text(value)
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Text(label)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 86)
-        .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.09), lineWidth: 1)
-        }
-    }
-}
-
-private struct ReadyRow: View {
-    let systemImage: String
-    let title: String
-    let detail: String
+private struct OnboardingScheduleRow: View {
+    let period: RoutinePeriod
+    @Binding var enabled: Bool
+    @Binding var time: Date
 
     var body: some View {
         HStack(spacing: 13) {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.mintFresh)
-                .frame(width: 36, height: 36)
-                .background(Color.mintFresh.opacity(0.1), in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
+            Image(systemName: period == .morning ? "sun.max.fill" : "moon.stars.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(enabled ? Color.mintFresh : .white.opacity(0.35))
+                .frame(width: 38, height: 38)
+                .background(.white.opacity(enabled ? 0.12 : 0.05), in: Circle())
+            Text(period.displayName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(enabled ? .white : .white.opacity(0.45))
+            Spacer(minLength: 4)
+            if enabled {
+                DatePicker("\(period.displayName) reminder time", selection: $time, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
             }
-            Spacer(minLength: 0)
+            Toggle("\(period.displayName) reminder", isOn: $enabled)
+                .labelsHidden()
+                .tint(Color.mintDeep)
         }
-        .frame(minHeight: 58)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.white.opacity(0.065))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(.white.opacity(0.13), lineWidth: 1)
+        }
+        .animation(.snappy(duration: 0.28), value: enabled)
+        .sensoryFeedback(.selection, trigger: enabled)
     }
 }
 
@@ -359,4 +412,20 @@ private struct HandChoiceButton: View {
         .buttonStyle(TactileCardButtonStyle())
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
+}
+
+private struct OnboardingPage {
+    enum Kind { case message, handedness, schedule, reminders }
+
+    let kind: Kind
+    let icon: String
+    let eyebrow: String
+    let title: String
+    let body: String
+    let mood: ToothMood
+    let action: ToothAction
+
+    /// Pages carrying controls give the type less room so the controls fit
+    /// without the layout having to scroll.
+    var isCompact: Bool { kind != .message }
 }
