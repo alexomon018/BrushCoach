@@ -55,6 +55,16 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
     public var flossed: Bool
     public var tongueCleaned: Bool
 
+    /// When this record first came into existence, on whichever device created
+    /// it. Distinct from `startedAt`, which is when the brushing began: a
+    /// session entered by hand a week later shares neither.
+    public var createdAt: Date
+
+    /// When this record was last written to storage. The repository stamps it on
+    /// every upsert, so it is the ordering key a later sync layer needs to decide
+    /// which of two copies of the same `id` is newer.
+    public var updatedAt: Date
+
     public init(
         id: UUID = UUID(),
         schemaVersion: Int = currentSchemaVersion,
@@ -69,7 +79,9 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
         analysisVersion: Int? = nil,
         source: BrushSessionSource,
         flossed: Bool = false,
-        tongueCleaned: Bool = false
+        tongueCleaned: Bool = false,
+        createdAt: Date = .now,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.schemaVersion = max(1, schemaVersion)
@@ -88,6 +100,10 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
         self.source = source
         self.flossed = flossed
         self.tongueCleaned = tongueCleaned
+        self.createdAt = createdAt
+        // A record that has never been rewritten was last written when it was
+        // created; `nil` here must not read as the epoch.
+        self.updatedAt = max(updatedAt ?? createdAt, createdAt)
     }
 
     /// Decoded field-by-field so that both transferred Watch records and the
@@ -115,12 +131,22 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
             analysisVersion: try container.decodeIfPresent(Int.self, forKey: .analysisVersion),
             source: try container.decodeIfPresent(BrushSessionSource.self, forKey: .source) ?? .manual,
             flossed: try container.decodeIfPresent(Bool.self, forKey: .flossed) ?? false,
-            tongueCleaned: try container.decodeIfPresent(Bool.self, forKey: .tongueCleaned) ?? false
+            tongueCleaned: try container.decodeIfPresent(Bool.self, forKey: .tongueCleaned) ?? false,
+            // Records written before these fields existed: the best available
+            // answer for both is when the brushing happened.
+            createdAt: try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? startedAt,
+            updatedAt: try container.decodeIfPresent(Date.self, forKey: .updatedAt)
         )
     }
 
-    public var period: RoutinePeriod { RoutinePeriod.period(for: startedAt) }
-
+    /// Which routine slot this brush belongs to.
+    ///
+    /// The routine day is required rather than defaulted. A convenience property
+    /// using `RoutineDay.default` used to exist, and silently disagreed with the
+    /// rest of the app for anyone who moved their rollover hour: with a 5am
+    /// rollover a 4am brush is that night's evening, but the default read it as
+    /// the next morning. Every other call site already threads the configured day
+    /// through, so the default was the only way to get a wrong answer.
     public func period(in day: RoutineDay, calendar: Calendar = .current) -> RoutinePeriod {
         day.period(for: startedAt, calendar: calendar)
     }

@@ -2,13 +2,18 @@ import SwiftUI
 
 @main
 struct BrushCoachApp: App {
+    private let environment = AppEnvironment.shared
+
     init() {
-        PhoneTraceReceiver.shared.activate()
+        environment.activate()
     }
 
     var body: some Scene {
         WindowGroup {
-            ConsumerRootView()
+            ConsumerRootView(
+                sessions: environment.sessions,
+                settings: environment.settings
+            )
         }
     }
 }

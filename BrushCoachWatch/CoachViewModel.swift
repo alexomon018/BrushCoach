@@ -3,6 +3,12 @@ import Foundation
 import Observation
 import WatchKit
 
+/// The watch-side shell around `SessionCoordinator`.
+///
+/// The pacing rules — countdown, zone advance, pause, ending early — live in
+/// BrushKit where they are unit-tested. What is left here is the part that can
+/// only exist on a Watch: haptics, extended runtime, Core Motion, and the
+/// handedness and calibration state that decide whether analysis runs at all.
 @MainActor
 @Observable
 final class CoachViewModel {
@@ -32,20 +38,19 @@ final class CoachViewModel {
     /// profile, or the estimate is not confident enough to show.
     private(set) var liveZone: BrushZoneLabel?
 
+    @ObservationIgnored private var coordinator = SessionCoordinator()
     @ObservationIgnored private let runtime = ExtendedRuntimeController()
     @ObservationIgnored private let recorder = WatchMotionRecorder()
-    @ObservationIgnored private var workTask: Task<Void, Never>?
+    @ObservationIgnored private var tickTask: Task<Void, Never>?
     @ObservationIgnored private var motionTask: Task<Void, Never>?
     @ObservationIgnored private var analyzer = LiveSessionAnalyzer()
     @ObservationIgnored private var didSenseMotion = false
     @ObservationIgnored private var lastStrokeRateNudge: Date?
     @ObservationIgnored private var isStoppingMotionDeliberately = false
-    @ObservationIgnored private let timeline = RoutineTimeline()
-    /// Elapsed time is derived from wall-clock instants, never accumulated from
-    /// ticks, so a suspended process cannot make the session drift. See
-    /// `SessionClockTests` for the properties this relies on.
-    @ObservationIgnored private lazy var clock = SessionClock(limit: timeline.totalDuration)
-    @ObservationIgnored private var sessionStartedAt: Date?
+
+    /// The dial only renders whole seconds, and this runs for two minutes under
+    /// extended runtime on a small battery.
+    private static let tickInterval = Duration.milliseconds(250)
 
     /// Resolved fresh each time: the user can move the Watch to the other wrist
     /// or change their answer between sessions.
@@ -66,48 +71,23 @@ final class CoachViewModel {
         try? CalibrationProfileStore.load()
     }
 
-    var isBusy: Bool {
-        switch phase {
-        case .countdown, .brushing, .paused: true
-        default: false
-        }
-    }
-
-    var isPaused: Bool { phase == .paused }
-
-    var zoneSecondsRemaining: Int {
-        timeline.snapshot(elapsed: elapsed).zoneSecondsRemaining
-    }
-
-    var progress: Double { min(1, elapsed / timeline.totalDuration) }
+    var isBusy: Bool { coordinator.isBusy }
+    var isPaused: Bool { coordinator.isPaused }
+    var zoneSecondsRemaining: Int { coordinator.zoneSecondsRemaining }
+    var progress: Double { coordinator.progress }
+    var scheduledZone: BrushZoneLabel { coordinator.scheduledZone }
 
     var zoneName: String {
         ["Upper right", "Upper centre", "Upper left", "Lower left", "Lower centre", "Lower right"][currentZoneIndex]
     }
 
-    /// The zone the pacer is currently prompting, as distinct from `liveZone`,
-    /// which is where the classifier thinks the brush actually is.
-    var scheduledZone: BrushZoneLabel { timeline.plan.zones[currentZoneIndex] }
+    // MARK: - Intent
 
     func startSession() {
-        guard workTask == nil else { return }
-        clearRunState()
-        workTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await runSession()
-            } catch is CancellationError {
-                // `endEarly` cancels the task *and* records a partial session, so
-                // only fall back to `.ready` if nothing terminal was set already.
-                if isBusy { phase = .ready }
-            } catch {
-                phase = .failed(error.localizedDescription)
-                WKInterfaceDevice.current().play(.failure)
-            }
-            stopMotionAnalysis()
-            runtime.end()
-            workTask = nil
-        }
+        guard tickTask == nil else { return }
+        resetLiveReadings()
+        apply(coordinator.start(at: .now))
+        startTicking()
     }
 
     func handle(url: URL) {
@@ -115,73 +95,115 @@ final class CoachViewModel {
         startSession()
     }
 
-    func pause() {
-        guard phase == .brushing else { return }
-        clock.pause(at: .now)
-        elapsed = clock.elapsed(at: .now)
-        phase = .paused
-        // Motion keeps arriving while paused; none of it is this session's
-        // brushing, and a window spanning the pause would be interpolated
-        // across the gap.
-        analyzer.suspend()
-        liveActivity = nil
-        liveZone = nil
-        WKInterfaceDevice.current().play(.stop)
+    func pause() { apply(coordinator.pause(at: .now)) }
+    func resume() { apply(coordinator.resume(at: .now)) }
+    func endEarly() { apply(coordinator.endEarly(at: .now)) }
+    func discard() { apply(coordinator.discard()) }
+
+    func finishSummary() { acknowledge() }
+    func dismissError() { acknowledge() }
+    func markFlossed() { updateSummary { $0.flossed = true } }
+    func markTongueCleaned() { updateSummary { $0.tongueCleaned = true } }
+
+    private func acknowledge() {
+        apply(coordinator.acknowledge())
+        resetLiveReadings()
     }
 
-    func resume() {
-        guard phase == .paused else { return }
-        clock.resume(at: .now)
-        phase = .brushing
-        WKInterfaceDevice.current().play(.start)
-    }
+    // MARK: - The tick loop
 
-    /// Ends the session early, keeping credit for the zones already brushed.
-    /// Discarding a nearly complete brush is the failure users resent most.
-    func endEarly() {
-        let now = Date.now
-        clock.stop(at: now)
-        let banked = clock.elapsed(at: now)
-        workTask?.cancel()
-        stopMotionAnalysis()
-        runtime.end()
-
-        let snapshot = timeline.snapshot(elapsed: banked)
-        guard let startedAt = sessionStartedAt, snapshot.zonesCompleted > 0 else {
-            reset()
-            return
+    /// One loop, wall-clock driven. The coordinator derives every value from the
+    /// instant it is handed, so a tick that arrives late — or not at all while
+    /// the process is suspended — cannot make the session drift.
+    private func startTicking() {
+        tickTask = Task { @MainActor [weak self] in
+            while let self, coordinator.isBusy {
+                do {
+                    try await Task.sleep(for: Self.tickInterval)
+                } catch {
+                    break
+                }
+                apply(coordinator.tick(at: .now))
+            }
+            self?.tickTask = nil
         }
-        finish(
-            startedAt: startedAt,
-            duration: banked,
-            zonesCompleted: snapshot.zonesCompleted
+    }
+
+    // MARK: - Effects
+
+    private func apply(_ effects: [SessionCoordinator.Effect]) {
+        for effect in effects { perform(effect) }
+        syncFromCoordinator()
+    }
+
+    private func perform(_ effect: SessionCoordinator.Effect) {
+        switch effect {
+        case .beginExtendedRuntime:
+            runtime.begin()
+        case .endExtendedRuntime:
+            runtime.end()
+        case .startMotionAnalysis:
+            startMotionAnalysis()
+        case .stopMotionAnalysis:
+            stopMotionAnalysis()
+        case .suspendMotionAnalysis:
+            // Motion keeps arriving while paused; none of it is this session's
+            // brushing, and a window spanning the pause would be interpolated
+            // across the gap.
+            analyzer.suspend()
+            liveActivity = nil
+            liveZone = nil
+        case .countdownTicked:
+            WKInterfaceDevice.current().play(.click)
+        case .sessionStarted, .sessionResumed:
+            WKInterfaceDevice.current().play(.start)
+        case .sessionPaused:
+            WKInterfaceDevice.current().play(.stop)
+        case .advancedToZone:
+            // A prominent tap: the wrist is moving and often out of sight.
+            WKInterfaceDevice.current().play(.notification)
+        case .finished(let outcome):
+            record(outcome)
+        case .failed(let message):
+            phase = .failed(message)
+            WKInterfaceDevice.current().play(.failure)
+        }
+    }
+
+    /// Mirrors the pacer's state onto the observable properties the views read.
+    /// The two terminal phases are set while handling their effect, because each
+    /// carries a payload the coordinator does not have.
+    private func syncFromCoordinator() {
+        elapsed = coordinator.elapsed
+        currentZoneIndex = coordinator.currentZoneIndex
+        switch coordinator.phase {
+        case .ready: phase = .ready
+        case .countdown(let remaining): phase = .countdown(remaining)
+        case .brushing: phase = .brushing
+        case .paused: phase = .paused
+        case .finished, .failed: break
+        }
+    }
+
+    /// Builds and stores the finished session. The pacer's facts arrive in
+    /// `outcome`; analysis is attached here and only here, so it stays obvious
+    /// that the former never depend on the latter.
+    private func record(_ outcome: SessionCoordinator.PacerOutcome) {
+        let session = BrushSession(
+            startedAt: outcome.startedAt,
+            endedAt: outcome.startedAt.addingTimeInterval(outcome.duration),
+            duration: outcome.duration,
+            zonesCompleted: outcome.zonesCompleted,
+            plannedZones: outcome.plannedZones,
+            analysis: didSenseMotion ? analyzer.currentAnalysis : nil,
+            source: .watch
         )
-    }
-
-    /// Abandons the session without recording anything.
-    func discard() {
-        workTask?.cancel()
-        stopMotionAnalysis()
-        runtime.end()
-        reset()
-    }
-
-    private func reset() {
-        phase = .ready
-        clearRunState()
-    }
-
-    private func clearRunState() {
-        elapsed = 0
-        currentZoneIndex = 0
-        clock.reset()
-        sessionStartedAt = nil
-        liveActivity = nil
-        liveBrushingSeconds = 0
-        liveZone = nil
-        didSenseMotion = false
-        lastStrokeRateNudge = nil
-        analyzer.reset()
+        try? WatchSessionStore.upsert(session)
+        WatchTraceTransfer.shared.enqueue(session)
+        phase = .completed(
+            SessionSummary(session: session, nextSteps: pendingSteps(), capability: capability)
+        )
+        WKInterfaceDevice.current().play(.success)
     }
 
     private func pendingSteps() -> [String] {
@@ -192,75 +214,22 @@ final class CoachViewModel {
         return steps
     }
 
-    func finishSummary() { reset() }
-    func dismissError() { reset() }
-    func markFlossed() { updateSummary { $0.flossed = true } }
-    func markTongueCleaned() { updateSummary { $0.tongueCleaned = true } }
-
-    private func runSession() async throws {
-        runtime.begin()
-        for count in stride(from: 3, through: 1, by: -1) {
-            phase = .countdown(count)
-            WKInterfaceDevice.current().play(.click)
-            try await Task.sleep(for: .seconds(1))
-        }
-
-        let startedAt = Date.now
-        sessionStartedAt = startedAt
-        clock.start(at: startedAt)
-        phase = .brushing
-        WKInterfaceDevice.current().play(.start)
-        startMotionAnalysis()
-
-        while true {
-            try Task.checkCancellation()
-            guard phase != .paused else {
-                try await Task.sleep(for: .milliseconds(250))
-                continue
-            }
-            let snapshot = timeline.snapshot(elapsed: clock.elapsed(at: .now))
-            elapsed = snapshot.elapsed
-            let newIndex = snapshot.currentZoneIndex
-            if newIndex > currentZoneIndex {
-                currentZoneIndex = newIndex
-                // A prominent tap: the wrist is moving and often out of sight.
-                WKInterfaceDevice.current().play(.notification)
-            }
-            if snapshot.isComplete { break }
-            // 4 Hz. The dial only renders whole seconds, and this runs for two
-            // minutes under extended runtime on a small battery.
-            try await Task.sleep(for: .milliseconds(250))
-        }
-
-        stopMotionAnalysis()
-        let zones = timeline.plan.zones.count
-        finish(
-            startedAt: startedAt,
-            duration: timeline.totalDuration,
-            zonesCompleted: zones
-        )
+    private func updateSummary(_ update: (inout BrushSession) -> Void) {
+        guard case .completed(var summary) = phase else { return }
+        update(&summary.session)
+        _ = try? WatchSessionStore.upsert(summary.session)
+        WatchTraceTransfer.shared.enqueue(summary.session)
+        phase = .completed(summary)
+        WKInterfaceDevice.current().play(.click)
     }
 
-    /// Builds and stores the finished session. Pacer facts and analysis facts are
-    /// assembled in one place so it stays obvious that the former never depend
-    /// on the latter.
-    private func finish(startedAt: Date, duration: TimeInterval, zonesCompleted: Int) {
-        let session = BrushSession(
-            startedAt: startedAt,
-            endedAt: startedAt.addingTimeInterval(duration),
-            duration: duration,
-            zonesCompleted: zonesCompleted,
-            plannedZones: timeline.plan.zones.count,
-            analysis: didSenseMotion ? analyzer.currentAnalysis : nil,
-            source: .watch
-        )
-        try? WatchSessionStore.upsert(session)
-        WatchTraceTransfer.shared.enqueue(session)
-        phase = .completed(
-            SessionSummary(session: session, nextSteps: pendingSteps(), capability: capability)
-        )
-        WKInterfaceDevice.current().play(.success)
-        clearRunState()
+    private func resetLiveReadings() {
+        liveActivity = nil
+        liveBrushingSeconds = 0
+        liveZone = nil
+        didSenseMotion = false
+        lastStrokeRateNudge = nil
+        analyzer.reset()
     }
 
     // MARK: - Motion analysis
@@ -279,15 +248,14 @@ final class CoachViewModel {
             guard let self else { return }
             // A hard ceiling well past the routine, so an abandoned session can
             // never leave device motion running.
-            let ceiling = timeline.totalDuration + 60
+            let ceiling = coordinator.timeline.totalDuration + 60
             do {
                 _ = try await recorder.recordUntilStopped(maxDuration: ceiling) { [weak self] sample, _ in
                     guard let self else { return true }
                     // Paused: the pacer is not counting, so neither does analysis.
                     guard phase == .brushing else { return false }
                     didSenseMotion = true
-                    let scheduled = timeline.plan.zones[currentZoneIndex]
-                    for insight in analyzer.ingest(sample, scheduledZone: scheduled) {
+                    for insight in analyzer.ingest(sample, scheduledZone: coordinator.scheduledZone) {
                         handle(insight)
                     }
                     liveActivity = analyzer.currentActivity
@@ -337,14 +305,5 @@ final class CoachViewModel {
         if let last = lastStrokeRateNudge, now.timeIntervalSince(last) < 15 { return }
         lastStrokeRateNudge = now
         WKInterfaceDevice.current().play(.directionDown)
-    }
-
-    private func updateSummary(_ update: (inout BrushSession) -> Void) {
-        guard case .completed(var summary) = phase else { return }
-        update(&summary.session)
-        _ = try? WatchSessionStore.upsert(summary.session)
-        WatchTraceTransfer.shared.enqueue(summary.session)
-        phase = .completed(summary)
-        WKInterfaceDevice.current().play(.click)
     }
 }

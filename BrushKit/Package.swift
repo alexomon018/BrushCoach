@@ -11,10 +11,14 @@ let package = Package(
     ],
     products: [
         .library(name: "BrushKit", targets: ["BrushKit"]),
+        .library(name: "BrushDesign", targets: ["BrushDesign"]),
         .executable(name: "brush-replay", targets: ["BrushReplay"])
     ],
     targets: [
         .target(name: "BrushKit"),
+        // Brand tokens only. Kept out of BrushKit so the domain package stays
+        // free of SwiftUI and remains testable without a UI framework.
+        .target(name: "BrushDesign"),
         .executableTarget(name: "BrushReplay", dependencies: ["BrushKit"]),
         .testTarget(
             name: "BrushKitTests",

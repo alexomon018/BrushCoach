@@ -1,23 +1,25 @@
+import BrushDesign
 import SwiftUI
 
-/// The watch app's colours, in one place.
+/// The watch app's names for the brand colours.
 ///
-/// These were previously duplicated as `private extension Color` in both
-/// CoachView and RecordingView, which meant a third screen could not use them
-/// without copying the values a third time.
+/// The values live in `BrushBrand`. Three of these used to be literals identical
+/// to the companion app's, and `rinseBlue` used to be a literal that was *not* —
+/// the same symbol meaning a different colour in each target. Capture's blue is
+/// now named for what it is, so the two can no longer be confused.
 extension Color {
     // Coach
-    static let watchInk = Color(red: 0.027, green: 0.102, blue: 0.141)
-    static let watchBlue = Color(red: 0.23, green: 0.69, blue: 0.86)
-    static let watchMint = Color(red: 0.498, green: 0.878, blue: 0.765)
-    static let watchCoral = Color(red: 0.98, green: 0.41, blue: 0.37)
+    static let watchInk = BrushBrand.ink
+    static let watchBlue = BrushBrand.blueBright
+    static let watchMint = BrushBrand.mint
+    static let watchCoral = BrushBrand.coral
 
     // Capture
-    static let captureInk = Color(red: 0.025, green: 0.055, blue: 0.09)
-    static let enamel = Color(red: 0.96, green: 0.98, blue: 0.99)
-    static let rinseBlue = Color(red: 0.23, green: 0.72, blue: 0.94)
-    static let recordCoral = Color(red: 1.0, green: 0.36, blue: 0.34)
-    static let mintSignal = Color(red: 0.38, green: 0.89, blue: 0.69)
+    static let captureInk = BrushBrand.captureInk
+    static let enamel = BrushBrand.enamel
+    static let captureBlue = BrushBrand.blueVivid
+    static let recordCoral = BrushBrand.recordCoral
+    static let mintSignal = BrushBrand.mintSignal
 }
 
 /// Watch-scale counterparts to the companion layout rules. The values are

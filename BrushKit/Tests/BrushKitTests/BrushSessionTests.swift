@@ -211,3 +211,32 @@ struct BrushSessionTests {
         ))!
     }
 }
+
+/// A convenience `session.period` using `RoutineDay.default` used to exist
+/// alongside the day-aware call. For anyone who moved their rollover hour the
+/// two disagreed, so History could label a brush "Morning" while the same brush
+/// counted as that night's evening everywhere else.
+struct SessionPeriodRespectsTheConfiguredDayTests {
+    @Test
+    func aLateNightBrushBelongsToTheEveningOfTheDayItFinished() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+
+        // 04:00, with the routine day rolling over at 05:00.
+        let fourAM = calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 4))!
+        let session = BrushSession(
+            startedAt: fourAM,
+            endedAt: fourAM.addingTimeInterval(120),
+            duration: 120,
+            zonesCompleted: 6,
+            source: .watch
+        )
+
+        let lateRollover = RoutineDay(endsAtHour: 5)
+        #expect(session.period(in: lateRollover, calendar: calendar) == .evening)
+
+        // The old default would have called this the next morning, because 4 is
+        // past a 3am rollover and before midday.
+        #expect(session.period(in: .default, calendar: calendar) == .morning)
+    }
+}

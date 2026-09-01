@@ -5,11 +5,16 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var page = 0
-    @State private var settings = RoutineSettings.shared
+    @State private var settings: RoutineSettings
     /// Blocks the footer while the notification prompt is on screen, so a second
     /// tap cannot finish onboarding before the answer comes back.
     @State private var isWorking = false
     let complete: () -> Void
+
+    init(settings: RoutineSettings, complete: @escaping () -> Void) {
+        _settings = State(initialValue: settings)
+        self.complete = complete
+    }
 
     private static let pages: [OnboardingPage] = [
         OnboardingPage(

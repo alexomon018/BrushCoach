@@ -213,7 +213,9 @@ private final class StoredBrushSession {
         coveredSeconds = analysis?.coveredSeconds ?? 0
         recordingCompleted = analysis?.recordingCompleted ?? true
 
-        createdAt = now
+        // The Watch stamps `createdAt` when it builds the session; preserve it
+        // through the transfer instead of resetting it to the phone's clock.
+        createdAt = session.createdAt
         updatedAt = now
         deletedAt = nil
     }
@@ -278,7 +280,9 @@ private final class StoredBrushSession {
             analysisVersion: analysisSchemaVersion,
             source: BrushSessionSource(rawValue: sourceRawValue) ?? .manual,
             flossed: flossed,
-            tongueCleaned: tongueCleaned
+            tongueCleaned: tongueCleaned,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 }

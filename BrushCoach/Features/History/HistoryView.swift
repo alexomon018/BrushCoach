@@ -13,6 +13,15 @@ struct HistoryView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: CompanionMetrics.componentSpacing) {
+                    // History is the screen where a save failure actually costs
+                    // the user something, so it is stated here too.
+                    if let message = store.lastError {
+                        StorageNotice(
+                            message: message,
+                            isDegradedRatherThanFailed: store.isUsingFallbackStorage
+                        )
+                    }
+
                     WeekRhythmCard(statuses: weekStatuses, streak: store.streak)
                         .staggeredReveal(index: 0)
 
@@ -89,6 +98,7 @@ struct HistoryView: View {
         ForEach(Array(store.sessions.enumerated()), id: \.element.id) { index, session in
             HistorySessionCard(
                 session: session,
+                routineDay: store.routineDay,
                 edit: {
                     editFeedback += 1
                     editing = session
@@ -201,21 +211,24 @@ private struct EmptyHistoryCard: View {
 
 private struct HistorySessionCard: View {
     let session: BrushSession
+    let routineDay: RoutineDay
     let edit: () -> Void
     let delete: () -> Void
+
+    private var period: RoutinePeriod { session.period(in: routineDay) }
 
     var body: some View {
         HStack(spacing: 10) {
             Button(action: edit) {
                 HStack(spacing: 14) {
-                    Image(systemName: session.period == .morning ? "sun.max.fill" : "moon.stars.fill")
+                    Image(systemName: period == .morning ? "sun.max.fill" : "moon.stars.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(session.period == .morning ? Color.rinseBlue : Color.sketchLavender)
+                        .foregroundStyle(period == .morning ? Color.rinseBlue : Color.sketchLavender)
                         .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                         .background(iconBackground, in: Circle())
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(session.period.displayName)
+                        Text(period.displayName)
                             .font(.headline)
                             .foregroundStyle(Color.deepInk)
                         HStack(spacing: 5) {
@@ -258,6 +271,6 @@ private struct HistorySessionCard: View {
     }
 
     private var iconBackground: Color {
-        session.period == .morning ? Color.rinseBlue.opacity(0.12) : Color.sketchLavender.opacity(0.12)
+        period == .morning ? Color.rinseBlue.opacity(0.12) : Color.sketchLavender.opacity(0.12)
     }
 }

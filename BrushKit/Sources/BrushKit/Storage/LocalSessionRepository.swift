@@ -5,8 +5,21 @@ import Foundation
 public struct LocalSessionRepository: SessionRepository, Sendable {
     public let fileURL: URL
 
-    public init(directory: URL, filename: String = "brush-sessions.json") {
+    /// Most recent sessions to keep on disk, or `nil` to keep every one.
+    ///
+    /// The whole array is rewritten on every upsert, so an unbounded file makes
+    /// each brush cost more than the last. The phone keeps everything in the
+    /// database; the Watch passes its sessions on and only needs a short tail,
+    /// so it caps this. See `WatchSessionStore`.
+    public let retentionLimit: Int?
+
+    public init(
+        directory: URL,
+        filename: String = "brush-sessions.json",
+        retentionLimit: Int? = nil
+    ) {
         fileURL = directory.appending(path: filename)
+        self.retentionLimit = retentionLimit.map { max(1, $0) }
     }
 
     public func load() throws -> [BrushSession] {
@@ -19,8 +32,15 @@ public struct LocalSessionRepository: SessionRepository, Sendable {
     @discardableResult
     public func upsert(_ session: BrushSession) throws -> [BrushSession] {
         var sessions = try load()
+        var stamped = session
+        // Rewriting a record keeps the moment it was first created; only the
+        // write time moves. A later sync layer orders by `updatedAt`.
+        if let existing = sessions.first(where: { $0.id == session.id }) {
+            stamped.createdAt = existing.createdAt
+        }
+        stamped.updatedAt = .now
         sessions.removeAll { $0.id == session.id }
-        sessions.append(session)
+        sessions.append(stamped)
         return try save(sessions)
     }
 
@@ -37,7 +57,10 @@ public struct LocalSessionRepository: SessionRepository, Sendable {
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let sorted = sessions.sorted { $0.startedAt > $1.startedAt }
+        var sorted = sessions.sorted { $0.startedAt > $1.startedAt }
+        if let retentionLimit, sorted.count > retentionLimit {
+            sorted = Array(sorted.prefix(retentionLimit))
+        }
         let data = try Self.encoder.encode(sorted)
         try data.write(to: fileURL, options: .atomic)
         return sorted

@@ -27,9 +27,13 @@
 		A10000000000000000000019 /* CoachViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* CoachViewModel.swift */; };
 		A10000000000000000000021 /* BrushKit in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000002 /* BrushKit */; };
 		A10000000000000000000022 /* BrushKit in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000003 /* BrushKit */; };
+		A10000000000000000000031 /* BrushDesign in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000004 /* BrushDesign */; };
+		A10000000000000000000032 /* BrushDesign in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000005 /* BrushDesign */; };
 		A10000000000000000000023 /* BrushCoachWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* BrushCoachWatch.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C10000000000000000000001 /* ConsumerRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* ConsumerRootView.swift */; };
 		C10000000000000000000002 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* SessionStore.swift */; };
+		C10000000000000000000032 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000032 /* AppEnvironment.swift */; };
+		C10000000000000000000031 /* RoutineServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000031 /* RoutineServices.swift */; };
 		C10000000000000000000003 /* RoutineSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000003 /* RoutineSettings.swift */; };
 		C10000000000000000000004 /* HealthKitWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000004 /* HealthKitWriter.swift */; };
 		C10000000000000000000005 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000005 /* ReminderScheduler.swift */; };
@@ -42,6 +46,7 @@
 		D1000000000000000000000000000302 /* CardStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000000000302 /* CardStyles.swift */; };
 		D1000000000000000000000000000303 /* StaggeredReveal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000000000303 /* StaggeredReveal.swift */; };
 		D1000000000000000000000000000304 /* CompanionSectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000000000304 /* CompanionSectionHeader.swift */; };
+		D1000000000000000000000000000320 /* StorageNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000000000320 /* StorageNotice.swift */; };
 		D1000000000000000000000000000305 /* DentalArchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000000000305 /* DentalArchView.swift */; };
 		D1000000000000000000000000000306 /* PromptToggleRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000000000306 /* PromptToggleRow.swift */; };
 		D1000000000000000000000000000307 /* ResourceRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000000000307 /* ResourceRow.swift */; };
@@ -128,6 +133,8 @@
 		A20000000000000000000035 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		C20000000000000000000001 /* ConsumerRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsumerRootView.swift; sourceTree = "<group>"; };
 		C20000000000000000000002 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		C20000000000000000000032 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		C20000000000000000000031 /* RoutineServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineServices.swift; sourceTree = "<group>"; };
 		C20000000000000000000003 /* RoutineSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineSettings.swift; sourceTree = "<group>"; };
 		C20000000000000000000004 /* HealthKitWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitWriter.swift; sourceTree = "<group>"; };
 		C20000000000000000000005 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
@@ -142,6 +149,7 @@
 		D2000000000000000000000000000302 /* CardStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStyles.swift; sourceTree = "<group>"; };
 		D2000000000000000000000000000303 /* StaggeredReveal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaggeredReveal.swift; sourceTree = "<group>"; };
 		D2000000000000000000000000000304 /* CompanionSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionSectionHeader.swift; sourceTree = "<group>"; };
+		D2000000000000000000000000000320 /* StorageNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageNotice.swift; sourceTree = "<group>"; };
 		D2000000000000000000000000000305 /* DentalArchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DentalArchView.swift; sourceTree = "<group>"; };
 		D2000000000000000000000000000306 /* PromptToggleRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptToggleRow.swift; sourceTree = "<group>"; };
 		D2000000000000000000000000000307 /* ResourceRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceRow.swift; sourceTree = "<group>"; };
@@ -164,6 +172,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000021 /* BrushKit in Frameworks */,
+				A10000000000000000000031 /* BrushDesign in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -172,6 +181,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000022 /* BrushKit in Frameworks */,
+				A10000000000000000000032 /* BrushDesign in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -205,6 +215,8 @@
 				A20000000000000000000001 /* BrushCoachApp.swift */,
 				C20000000000000000000001 /* ConsumerRootView.swift */,
 				C20000000000000000000002 /* SessionStore.swift */,
+				C20000000000000000000032 /* AppEnvironment.swift */,
+				C20000000000000000000031 /* RoutineServices.swift */,
 				C20000000000000000000003 /* RoutineSettings.swift */,
 				C20000000000000000000004 /* HealthKitWriter.swift */,
 				C20000000000000000000005 /* ReminderScheduler.swift */,
@@ -285,6 +297,7 @@
 			isa = PBXGroup;
 			children = (
 				D2000000000000000000000000000304 /* CompanionSectionHeader.swift */,
+				D2000000000000000000000000000320 /* StorageNotice.swift */,
 				D2000000000000000000000000000305 /* DentalArchView.swift */,
 				D2000000000000000000000000000306 /* PromptToggleRow.swift */,
 				D2000000000000000000000000000307 /* ResourceRow.swift */,
@@ -378,6 +391,7 @@
 			name = BrushCoach;
 			packageProductDependencies = (
 				A90000000000000000000002 /* BrushKit */,
+				A90000000000000000000004 /* BrushDesign */,
 			);
 			productName = BrushCoach;
 			productReference = A20000000000000000000021 /* BrushCoach.app */;
@@ -400,6 +414,7 @@
 			name = BrushCoachWatch;
 			packageProductDependencies = (
 				A90000000000000000000003 /* BrushKit */,
+				A90000000000000000000005 /* BrushDesign */,
 			);
 			productName = BrushCoachWatch;
 			productReference = A20000000000000000000022 /* BrushCoachWatch.app */;
@@ -510,6 +525,8 @@
 				A10000000000000000000005 /* ActivitySheet.swift in Sources */,
 				C10000000000000000000001 /* ConsumerRootView.swift in Sources */,
 				C10000000000000000000002 /* SessionStore.swift in Sources */,
+				C10000000000000000000032 /* AppEnvironment.swift in Sources */,
+				C10000000000000000000031 /* RoutineServices.swift in Sources */,
 				C10000000000000000000003 /* RoutineSettings.swift in Sources */,
 				C10000000000000000000004 /* HealthKitWriter.swift in Sources */,
 				C10000000000000000000005 /* ReminderScheduler.swift in Sources */,
@@ -517,6 +534,7 @@
 				D1000000000000000000000000000302 /* CardStyles.swift in Sources */,
 				D1000000000000000000000000000303 /* StaggeredReveal.swift in Sources */,
 				D1000000000000000000000000000304 /* CompanionSectionHeader.swift in Sources */,
+				D1000000000000000000000000000320 /* StorageNotice.swift in Sources */,
 				D1000000000000000000000000000305 /* DentalArchView.swift in Sources */,
 				D1000000000000000000000000000306 /* PromptToggleRow.swift in Sources */,
 				D1000000000000000000000000000307 /* ResourceRow.swift in Sources */,
@@ -830,6 +848,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A90000000000000000000001 /* XCLocalSwiftPackageReference "BrushKit" */;
 			productName = BrushKit;
+		};
+		A90000000000000000000004 /* BrushDesign */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A90000000000000000000001 /* XCLocalSwiftPackageReference "BrushKit" */;
+			productName = BrushDesign;
+		};
+		A90000000000000000000005 /* BrushDesign */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A90000000000000000000001 /* XCLocalSwiftPackageReference "BrushKit" */;
+			productName = BrushDesign;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

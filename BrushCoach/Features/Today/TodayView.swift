@@ -12,6 +12,12 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CompanionMetrics.componentSpacing) {
+                    if let message = store.lastError {
+                        StorageNotice(
+                            message: message,
+                            isDegradedRatherThanFailed: store.isUsingFallbackStorage
+                        )
+                    }
                     hero
                     routineCard
                     techniqueCard

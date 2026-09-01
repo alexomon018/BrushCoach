@@ -23,7 +23,7 @@ struct RecordingView: View {
         HStack {
             Label("LOCAL DATA", systemImage: "lock.fill")
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.rinseBlue)
+                .foregroundStyle(Color.captureBlue)
             Spacer()
             Text(model.sampleCount.formatted())
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -103,7 +103,7 @@ struct RecordingView: View {
                 } label: {
                     Label("Choose label", systemImage: "tag")
                 }
-                .watchSecondaryControl(tint: .rinseBlue)
+                .watchSecondaryControl(tint: .captureBlue)
 
                 Button {
                     model.begin(watchWrist: WatchWrist(rawValue: watchWrist))
@@ -146,7 +146,7 @@ private struct LabelPicker: View {
                     Spacer()
                     if selection == label {
                         Image(systemName: "checkmark")
-                            .foregroundStyle(Color.rinseBlue)
+                            .foregroundStyle(Color.captureBlue)
                     }
                 }
             }
@@ -162,7 +162,7 @@ private struct ZoneGlyph: View {
         HStack(spacing: 5) {
             ForEach(0..<6, id: \.self) { index in
                 Capsule()
-                    .fill(index == selectedIndex ? Color.rinseBlue : Color.enamel.opacity(0.13))
+                    .fill(index == selectedIndex ? Color.captureBlue : Color.enamel.opacity(0.13))
                     .frame(width: index == selectedIndex ? 19 : 12, height: index == selectedIndex ? 43 : 31)
                     .rotationEffect(.degrees(Double(index - 2) * 7))
             }
@@ -189,7 +189,7 @@ private struct ZoneDot: View {
 
     var body: some View {
         Circle()
-            .fill(label == .idle ? Color.secondary : label == .transition ? Color.recordCoral : Color.rinseBlue)
+            .fill(label == .idle ? Color.secondary : label == .transition ? Color.recordCoral : Color.captureBlue)
             .frame(width: 9, height: 9)
     }
 }
@@ -209,7 +209,7 @@ private struct Waveform: View {
                     else { path.addLine(to: CGPoint(x: x, y: y)) }
                 }
             }
-            .stroke(Color.rinseBlue, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .stroke(Color.captureBlue, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
         }
         .accessibilityHidden(true)
     }

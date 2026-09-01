@@ -145,8 +145,9 @@ BrushCoach.xcodeproj
     │   ├── Models/             sessions, handedness, routine day, motion samples, trace JSON
     │   ├── Pipeline/           resampler, windows, feature extraction
     │   ├── Classification/     activity detector, position change, calibration, zone classifier
-    │   ├── Session/            SessionClock, RoutineTimeline, LiveSessionAnalyzer
+    │   ├── Session/            SessionClock, RoutineTimeline, SessionCoordinator, LiveSessionAnalyzer
     │   └── Storage/            local session database, repository boundary, JSON migration source
+    ├── Sources/BrushDesign/    brand colour tokens, shared by both apps
     ├── Sources/BrushReplay/    offline replay and separability CLI
     └── Tests/BrushKitTests/    unit tests and trace fixture
 ```
@@ -287,9 +288,6 @@ These are open, not hidden:
   not a supported use case, and borrowing a workout session in a non-workout app risks App Review
   rejection. Sessions stay user-initiated; the app uses the `self-care` background mode, which is the
   correct one here.
-- **`BrushSession.period`** uses the default `RoutineDay` rather than the user's configured rollover
-  hour. Call sites that matter pass the configured day explicitly, so this is latent rather than
-  broken.
 - **No asset catalog, app icon, privacy manifest, or StoreKit integration.** These block App Store
   submission and are tracked separately from product work.
 
@@ -297,9 +295,18 @@ These are open, not hidden:
 
 Completed session history is stored on the iPhone in a local SwiftData database backed by SQLite.
 CloudKit is explicitly disabled. On first launch after this change, any existing
-`brush-sessions.json` history is imported automatically; the Watch still keeps its small local JSON
-copy until WatchConnectivity hands the session to the phone. Preferences remain in `UserDefaults`
-and the personal calibration profile remains in a Watch-local file.
+`brush-sessions.json` history is imported automatically. Preferences remain in `UserDefaults` and the
+personal calibration profile remains in a Watch-local file.
+
+The Watch keeps a local JSON copy until WatchConnectivity hands the session to the phone. That file
+is capped at the most recent `WatchSessionStore.retainedSessions` (60, roughly a month of twice-daily
+brushing): the whole array is re-encoded on every write, and the Watch is a staging area rather than
+the archive. The phone keeps everything.
+
+Every session carries `createdAt` and `updatedAt`. `createdAt` is stamped by the device that built
+the record and survives the transfer; `updatedAt` is stamped by whichever repository last wrote it,
+so a future sync layer has an ordering key. There is no `deletedAt` — a tombstone with nothing to
+consume it is a liability, so it lands with the sync layer that needs it.
 
 Motion traces are separate from session history. Each trace contains:
 

@@ -5,8 +5,6 @@ import Observation
 @MainActor
 @Observable
 final class RoutineSettings {
-    static let shared = RoutineSettings()
-
     var preferences: RoutinePreferences {
         didSet { persistAndApply() }
     }
@@ -19,10 +17,24 @@ final class RoutineSettings {
         }
     }
 
+    @ObservationIgnored private let reminders: any ReminderScheduling
+    @ObservationIgnored private let watch: any WatchLinking
+    /// Reminder scheduling needs to know which brushes already happened.
+    /// Supplied as a closure so this store does not have to know that
+    /// `SessionStore` exists.
+    @ObservationIgnored private let sessions: @MainActor () -> [BrushSession]
+
     private let key = "routine-preferences-v1"
     private let wristKey = "watch-wrist-v1"
 
-    private init() {
+    init(
+        reminders: any ReminderScheduling,
+        watch: any WatchLinking,
+        sessions: @escaping @MainActor () -> [BrushSession]
+    ) {
+        self.reminders = reminders
+        self.watch = watch
+        self.sessions = sessions
         if let data = UserDefaults.standard.data(forKey: key),
            let decoded = try? JSONDecoder().decode(RoutinePreferences.self, from: data) {
             preferences = decoded
@@ -33,11 +45,8 @@ final class RoutineSettings {
     }
 
     func apply() async {
-        PhoneTraceReceiver.shared.send(preferences: preferences)
-        await ReminderScheduler.shared.refresh(
-            preferences: preferences,
-            sessions: SessionStore.shared.sessions
-        )
+        watch.send(preferences: preferences)
+        await reminders.refresh(preferences: preferences, sessions: sessions())
     }
 
     private func persistAndApply() {
@@ -47,4 +56,3 @@ final class RoutineSettings {
         Task { await apply() }
     }
 }
-

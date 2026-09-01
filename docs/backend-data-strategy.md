@@ -31,9 +31,9 @@ The existing `BrushSession` is already close to the right durable record:
 | `verifiedZones` | Optional motion-verification result; `nil` remains different from zero. |
 | `analysis` | Optional aggregate analysis: active seconds, fast-stroke seconds, position changes, longest held position, median stroke rate, coverage, completion state, and zone-agreement summary. |
 | `flossed`, `tongueCleaned` | User-entered routine details. |
-| `createdAt`, `updatedAt` | Needed once records sync. |
+| `createdAt`, `updatedAt` | **Implemented.** `createdAt` is stamped by the device that built the record and survives the Watch transfer; `updatedAt` is stamped by whichever repository last wrote it. Legacy records decode both as `startedAt`. |
 | `schemaVersion`, `analysisVersion` | Allow old records and results to remain interpretable after model or schema changes. |
-| `deletedAt` | Optional tombstone so a deletion propagates to other devices. |
+| `deletedAt` | Optional tombstone so a deletion propagates to other devices. **Deliberately not implemented yet.** Deletion is still a hard delete. A tombstone nothing reads is a liability — it would need the repository to filter it, streak and history to skip it, and a purge path to stop the table growing. It lands with the sync layer that gives it meaning. |
 
 Do not make motion analysis the authority for routine credit. Store it as an observation, matching the current model.
 

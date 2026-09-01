@@ -5,6 +5,18 @@ import Foundation
 final class PhoneTraceReceiver: NSObject, WCSessionDelegate, @unchecked Sendable {
     static let shared = PhoneTraceReceiver()
 
+    /// Set once by `AppEnvironment`. Held weakly and read on the main actor so
+    /// this delegate never has to reach for a singleton to deliver what arrives
+    /// from the Watch.
+    @MainActor private weak var sessions: SessionStore?
+    @MainActor private weak var settings: RoutineSettings?
+
+    @MainActor
+    func connect(sessions: SessionStore, settings: RoutineSettings) {
+        self.sessions = sessions
+        self.settings = settings
+    }
+
     func activate() {
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
@@ -18,7 +30,8 @@ final class PhoneTraceReceiver: NSObject, WCSessionDelegate, @unchecked Sendable
     ) {
         guard activationState == .activated else { return }
         Task { @MainActor in
-            self.send(preferences: RoutineSettings.shared.preferences)
+            guard let preferences = self.settings?.preferences else { return }
+            self.send(preferences: preferences)
         }
     }
 
@@ -43,12 +56,12 @@ final class PhoneTraceReceiver: NSObject, WCSessionDelegate, @unchecked Sendable
                   let brushSession = try? JSONDecoder().decode(BrushSession.self, from: data)
             else { return }
             Task { @MainActor in
-                SessionStore.shared.importFromWatch(brushSession)
+                self.sessions?.importFromWatch(brushSession)
             }
         case "watch-wrist":
             guard let raw = userInfo["wrist"] as? String, let wrist = WatchWrist(rawValue: raw) else { return }
             Task { @MainActor in
-                RoutineSettings.shared.watchWrist = wrist
+                self.settings?.watchWrist = wrist
             }
         default:
             return

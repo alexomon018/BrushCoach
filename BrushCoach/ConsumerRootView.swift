@@ -4,16 +4,21 @@ struct ConsumerRootView: View {
     enum AppTab: Hashable { case today, history, routine, more }
 
     @AppStorage("hasSeenConsumerOnboarding") private var hasSeenOnboarding = false
-    @State private var sessions = SessionStore.shared
-    @State private var routine = RoutineSettings.shared
+    @State private var sessions: SessionStore
+    @State private var routine: RoutineSettings
     @State private var selectedTab = AppTab.today
+
+    init(sessions: SessionStore, settings: RoutineSettings) {
+        _sessions = State(initialValue: sessions)
+        _routine = State(initialValue: settings)
+    }
 
     var body: some View {
         Group {
             if hasSeenOnboarding {
                 tabs
             } else {
-                OnboardingView { hasSeenOnboarding = true }
+                OnboardingView(settings: routine) { hasSeenOnboarding = true }
             }
         }
         .preferredColorScheme(hasSeenOnboarding ? .light : .dark)

@@ -1,12 +1,17 @@
+import BrushDesign
 import SwiftUI
 
+/// The companion app's names for the brand colours.
+///
+/// The values live in `BrushBrand` so the Watch app cannot drift from them; the
+/// names stay local because they read better at each call site.
 extension Color {
-    static let deepInk = Color(red: 0.027, green: 0.102, blue: 0.141)
-    static let enamelWash = Color(red: 0.946, green: 0.976, blue: 0.973)
-    static let rinseBlue = Color(red: 0.145, green: 0.568, blue: 0.735)
-    static let mintFresh = Color(red: 0.498, green: 0.878, blue: 0.765)
-    static let sketchLavender = Color(red: 0.47, green: 0.36, blue: 0.88)
-    static let achievementGold = Color(red: 0.95, green: 0.7, blue: 0.24)
-    static let mintDeep = Color(red: 0.09, green: 0.55, blue: 0.43)
-    static let coachCoral = Color(red: 0.98, green: 0.41, blue: 0.37)
+    static let deepInk = BrushBrand.ink
+    static let enamelWash = BrushBrand.enamelWash
+    static let rinseBlue = BrushBrand.blue
+    static let mintFresh = BrushBrand.mint
+    static let sketchLavender = BrushBrand.lavender
+    static let achievementGold = BrushBrand.gold
+    static let mintDeep = BrushBrand.mintDeep
+    static let coachCoral = BrushBrand.coral
 }
