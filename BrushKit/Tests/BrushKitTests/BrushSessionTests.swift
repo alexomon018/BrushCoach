@@ -25,7 +25,7 @@ struct BrushSessionTests {
         #expect(BrushSessionHistory.status(on: morning, sessions: sessions, calendar: calendar).completedCount == 2)
     }
 
-    @Test func repositoryUpsertsAndDeletesAtomically() throws {
+    @Test @MainActor func repositoryUpsertsAndDeletesAtomically() throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)
         let repository = LocalSessionRepository(directory: directory)
@@ -157,6 +157,9 @@ struct BrushSessionTests {
         #expect(sessions[0].zonesCompleted == 6)
         #expect(sessions[0].plannedZones == 6)
         #expect(sessions[0].verifiedZones == nil)
+        #expect(sessions[0].schemaVersion == BrushSession.currentSchemaVersion)
+        #expect(!sessions[0].timeZoneIdentifier.isEmpty)
+        #expect(sessions[0].analysisVersion == nil)
         #expect(sessions[0].completedRoutine)
     }
 

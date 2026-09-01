@@ -1,6 +1,6 @@
 # Backend and data strategy
 
-Status: proposed
+Status: accepted; Phase 1 implemented
 
 ## Decision
 
@@ -77,9 +77,11 @@ Treat a prompted zone as a prompt, not ground-truth behavior. Research labels ne
 
 ### Phase 1: local-only MVP
 
-Replace the single JSON array only when its limitations become visible. A small SwiftData or SQLite store would provide atomic per-record updates, migrations, queries, and room for sync metadata. Keep a repository protocol so storage can change without affecting the UI or BrushKit models.
+Completed on `codex/backend-data-strategy`: the iPhone session history now uses a local SwiftData store backed by SQLite, with CloudKit explicitly disabled. A repository protocol keeps persistence out of the UI and domain model. Existing `brush-sessions.json` records are imported transactionally, and the JSON repository remains a recovery fallback if the database cannot open.
 
-Minimum entities:
+Preferences stay in `UserDefaults`, the personal calibration profile stays in its Watch-local file, and raw trace files remain local. Those stores already match their data's lifecycle and do not need to be forced into the session database.
+
+Durable local data shapes (kept in the store appropriate to each lifecycle):
 
 ```text
 Session

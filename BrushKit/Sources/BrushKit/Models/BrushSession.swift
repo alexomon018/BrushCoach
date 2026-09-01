@@ -22,9 +22,15 @@ public enum BrushSessionSource: String, Codable, Hashable, Sendable {
 }
 
 public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
+    public static let currentSchemaVersion = 1
+
     public var id: UUID
+    public var schemaVersion: Int
     public var startedAt: Date
     public var endedAt: Date
+    /// Captured when the session is created so a future export or sync does not
+    /// reinterpret a brush after the user travels to another timezone.
+    public var timeZoneIdentifier: String
     public var duration: TimeInterval
     /// Zones the pacer advanced through. This is what "completed a two-minute
     /// brush" means, and it is never withheld because motion analysis failed.
@@ -43,6 +49,7 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
     /// Watch was on the wrong wrist, the user has not answered the handedness
     /// question, or sensing failed. Never used to gate routine credit.
     public var analysis: SessionAnalysis?
+    public var analysisVersion: Int?
 
     public var source: BrushSessionSource
     public var flossed: Bool
@@ -50,49 +57,62 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(),
+        schemaVersion: Int = currentSchemaVersion,
         startedAt: Date,
         endedAt: Date,
+        timeZoneIdentifier: String = TimeZone.current.identifier,
         duration: TimeInterval,
         zonesCompleted: Int,
         plannedZones: Int = 6,
         verifiedZones: Int? = nil,
         analysis: SessionAnalysis? = nil,
+        analysisVersion: Int? = nil,
         source: BrushSessionSource,
         flossed: Bool = false,
         tongueCleaned: Bool = false
     ) {
         self.id = id
+        self.schemaVersion = max(1, schemaVersion)
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.timeZoneIdentifier = timeZoneIdentifier
         self.duration = max(0, duration)
         let planned = max(1, plannedZones)
         self.plannedZones = planned
         self.zonesCompleted = min(planned, max(0, zonesCompleted))
         self.verifiedZones = verifiedZones.map { min(planned, max(0, $0)) }
         self.analysis = analysis
+        self.analysisVersion = analysis.map { _ in
+            analysisVersion ?? SessionAnalysis.currentSchemaVersion
+        }
         self.source = source
         self.flossed = flossed
         self.tongueCleaned = tongueCleaned
     }
 
-    /// Decoded field-by-field so that adding a field never invalidates history
-    /// already written to disk. `LocalSessionRepository` decodes the whole array,
-    /// so one unreadable session would take every other session with it.
+    /// Decoded field-by-field so that both transferred Watch records and the
+    /// legacy JSON history remain compatible as the durable schema evolves.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let startedAt = try container.decode(Date.self, forKey: .startedAt)
         let duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
         let planned = try container.decodeIfPresent(Int.self, forKey: .plannedZones) ?? 6
+        let analysis = try container.decodeIfPresent(SessionAnalysis.self, forKey: .analysis)
         self.init(
             id: try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(),
+            schemaVersion: try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+                ?? Self.currentSchemaVersion,
             startedAt: startedAt,
             endedAt: try container.decodeIfPresent(Date.self, forKey: .endedAt)
                 ?? startedAt.addingTimeInterval(duration),
+            timeZoneIdentifier: try container.decodeIfPresent(String.self, forKey: .timeZoneIdentifier)
+                ?? TimeZone.current.identifier,
             duration: duration,
             zonesCompleted: try container.decodeIfPresent(Int.self, forKey: .zonesCompleted) ?? 0,
             plannedZones: planned,
             verifiedZones: try container.decodeIfPresent(Int.self, forKey: .verifiedZones),
-            analysis: try container.decodeIfPresent(SessionAnalysis.self, forKey: .analysis),
+            analysis: analysis,
+            analysisVersion: try container.decodeIfPresent(Int.self, forKey: .analysisVersion),
             source: try container.decodeIfPresent(BrushSessionSource.self, forKey: .source) ?? .manual,
             flossed: try container.decodeIfPresent(Bool.self, forKey: .flossed) ?? false,
             tongueCleaned: try container.decodeIfPresent(Bool.self, forKey: .tongueCleaned) ?? false
@@ -249,4 +269,3 @@ public enum BrushSessionHistory {
         return streak
     }
 }
-

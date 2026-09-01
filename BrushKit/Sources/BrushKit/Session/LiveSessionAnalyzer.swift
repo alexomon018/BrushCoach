@@ -6,6 +6,8 @@ import Foundation
 /// the session counted — `BrushSession.completedRoutine` still depends only on
 /// the pacer, so a failed or absent reading can never take away a streak.
 public struct SessionAnalysis: Codable, Hashable, Sendable {
+    public static let currentSchemaVersion = 1
+
     /// Seconds the wrist was actually moving in a brushing rhythm. This is the
     /// number worth showing: most people's "two minutes" includes wetting the
     /// brush, rinsing, and standing still.
