@@ -72,6 +72,19 @@ struct RoutineView: View {
         }
         .sensoryFeedback(.success, trigger: successFeedback)
         .sensoryFeedback(.error, trigger: errorFeedback)
+        .task { await refreshConnectionStatus() }
+    }
+
+    /// Both connections can be granted outside this screen — notifications in
+    /// onboarding, either one in Settings — so read the real state on appear
+    /// rather than leaving the cards looking untouched.
+    private func refreshConnectionStatus() async {
+        let notificationsAllowed = await ReminderScheduler.shared.isAuthorized()
+        let healthAllowed = store.isHealthAuthorized
+        withAnimation(.snappy) {
+            if notificationsAllowed { notificationStatus = Self.notificationsReady }
+            if healthAllowed { healthStatus = Self.healthConnected }
+        }
     }
 
     /// States the capability plainly, including when it is absent. Telling

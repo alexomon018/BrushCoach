@@ -10,6 +10,11 @@ final class HealthKitWriter: @unchecked Sendable {
         HKObjectType.categoryType(forIdentifier: .toothbrushingEvent)
     }
 
+    var isAuthorized: Bool {
+        guard HKHealthStore.isHealthDataAvailable(), let type else { return false }
+        return store.authorizationStatus(for: type) == .sharingAuthorized
+    }
+
     func requestAuthorization() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable(), let type else { return false }
         do {
