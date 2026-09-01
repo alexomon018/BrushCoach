@@ -15,55 +15,50 @@ struct RoutineView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 22) {
+                VStack(spacing: CompanionMetrics.sectionSpacing) {
                     RoutineRailCard(preferences: settings.preferences, today: store.today)
                         .staggeredReveal(index: 0)
 
-                    CompanionSectionHeader(title: "TWICE DAILY", detail: "A reminder pauses after that brush is complete.")
-                        .staggeredReveal(index: 1)
+                    CompanionSection(title: "TWICE DAILY", detail: "A reminder pauses after that brush is complete.") {
+                        VStack(spacing: CompanionMetrics.componentSpacing) {
+                            PeriodScheduleCard(
+                                period: .morning,
+                                enabled: $settings.preferences.morningEnabled,
+                                time: morningTime,
+                                completed: store.today.morning != nil
+                            )
 
-                    PeriodScheduleCard(
-                        period: .morning,
-                        enabled: $settings.preferences.morningEnabled,
-                        time: morningTime,
-                        completed: store.today.morning != nil
-                    )
+                            PeriodScheduleCard(
+                                period: .evening,
+                                enabled: $settings.preferences.eveningEnabled,
+                                time: eveningTime,
+                                completed: store.today.evening != nil
+                            )
+                        }
+                    }
+                    .staggeredReveal(index: 1)
+
+                    CompanionSection(title: "FINISH THE ROUTINE", detail: "Choose the prompts that help without adding noise.") {
+                        promptsCard
+                    }
                     .staggeredReveal(index: 2)
 
-                    PeriodScheduleCard(
-                        period: .evening,
-                        enabled: $settings.preferences.eveningEnabled,
-                        time: eveningTime,
-                        completed: store.today.evening != nil
-                    )
+                    CompanionSection(title: "WHEN THE DAY ENDS", detail: "A late-night brush closes the day it finished.") {
+                        dayEndCard
+                    }
                     .staggeredReveal(index: 3)
 
-                    CompanionSectionHeader(title: "FINISH THE ROUTINE", detail: "Choose the prompts that help without adding noise.")
-                        .staggeredReveal(index: 4)
+                    CompanionSection(title: "STROKE CHECKING", detail: "Available only when the Watch is on your brushing hand.") {
+                        strokeCheckingCard
+                    }
+                    .staggeredReveal(index: 4)
 
-                    promptsCard
-                        .staggeredReveal(index: 5)
-
-                    CompanionSectionHeader(title: "WHEN THE DAY ENDS", detail: "A late-night brush closes the day it finished.")
-                        .staggeredReveal(index: 6)
-
-                    dayEndCard
-                        .staggeredReveal(index: 7)
-
-                    CompanionSectionHeader(title: "STROKE CHECKING", detail: "BrushCoach can only read brushing from the hand that holds the brush.")
-                        .staggeredReveal(index: 8)
-
-                    strokeCheckingCard
-                        .staggeredReveal(index: 9)
-
-                    CompanionSectionHeader(title: "CONNECTIONS", detail: "Keep the routine available across your devices.")
-                        .staggeredReveal(index: 10)
-
-                    connectionsCard
-                        .staggeredReveal(index: 11)
+                    CompanionSection(title: "CONNECTIONS", detail: "Optional services that support your routine.") {
+                        connectionsCard
+                    }
+                    .staggeredReveal(index: 5)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 30)
+                .companionPageFrame()
                 .revealGroup()
             }
             .background(Color.enamelWash.ignoresSafeArea())
@@ -88,7 +83,7 @@ struct RoutineView: View {
                 Image(systemName: capability.canSenseMotion ? "checkmark.seal.fill" : "info.circle.fill")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(capability.canSenseMotion ? Color.mintDeep : Color.rinseBlue)
-                    .frame(width: 38, height: 38)
+                    .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                     .background(
                         (capability.canSenseMotion ? Color.mintDeep : Color.rinseBlue).opacity(0.12),
                         in: Circle()
@@ -141,8 +136,7 @@ struct RoutineView: View {
                 }
             }
         }
-        .padding(18)
-        .premiumCard(cornerRadius: 24)
+        .companionCard()
     }
 
     private var brushingHand: Binding<BrushingHand?> {
@@ -170,17 +164,16 @@ struct RoutineView: View {
                 isOn: $settings.preferences.tonguePromptEnabled
             )
         }
-        .padding(14)
-        .premiumCard(cornerRadius: 24)
+        .companionCard()
     }
 
     private var dayEndCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 13) {
+            HStack(spacing: CompanionMetrics.rowSpacing) {
                 Image(systemName: "moon.zzz.fill")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.sketchLavender)
-                    .frame(width: 38, height: 38)
+                    .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                     .background(Color.sketchLavender.opacity(0.12), in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Day rolls over at")
@@ -201,8 +194,7 @@ struct RoutineView: View {
                 .tint(Color.rinseBlue)
             }
         }
-        .padding(14)
-        .premiumCard(cornerRadius: 24)
+        .companionCard()
     }
 
     private func hourLabel(_ hour: Int) -> String {
@@ -211,7 +203,7 @@ struct RoutineView: View {
     }
 
     private var connectionsCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: CompanionMetrics.componentSpacing) {
             ConnectionActionCard(
                 title: "Notifications",
                 detail: notificationStatus.isEmpty ? "Timely reminders for unfinished brushes" : notificationStatus,
@@ -286,7 +278,7 @@ private struct RoutineRailCard: View {
                     .tracking(1.4)
                     .foregroundStyle(Color.rinseBlue)
                 Text(routineTitle)
-                    .font(.system(size: 30, weight: .semibold, design: .serif))
+                    .font(.companionFeatureTitle)
                     .foregroundStyle(Color.deepInk)
             }
 
@@ -314,8 +306,7 @@ private struct RoutineRailCard: View {
                 )
             }
         }
-        .padding(22)
-        .premiumCard(cornerRadius: 28)
+        .companionCard(.feature)
     }
 
     private var routineTitle: String {
@@ -358,11 +349,11 @@ private struct PeriodScheduleCard: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 14) {
+            HStack(spacing: CompanionMetrics.rowSpacing) {
                 Image(systemName: period == .morning ? "sun.max.fill" : "moon.stars.fill")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(tint)
-                    .frame(width: 46, height: 46)
+                    .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                     .background(tint.opacity(0.12), in: Circle())
                     .symbolEffect(.pulse, value: enabled)
                 VStack(alignment: .leading, spacing: 3) {
@@ -395,8 +386,7 @@ private struct PeriodScheduleCard: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(18)
-        .premiumCard(cornerRadius: 24)
+        .companionCard()
         .animation(.snappy(duration: 0.34), value: enabled)
         .sensoryFeedback(.selection, trigger: enabled)
     }
@@ -413,11 +403,11 @@ private struct ConnectionActionCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
+            HStack(spacing: CompanionMetrics.rowSpacing) {
                 Image(systemName: systemImage)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(tint)
-                    .frame(width: 46, height: 46)
+                    .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                     .background(tint.opacity(0.12), in: Circle())
                     .contentTransition(.symbolEffect(.replace))
                 VStack(alignment: .leading, spacing: 3) {
@@ -429,8 +419,7 @@ private struct ConnectionActionCard: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
             }
-            .padding(17)
-            .premiumCard(cornerRadius: 22)
+            .companionCard()
         }
         .buttonStyle(TactileCardButtonStyle())
     }

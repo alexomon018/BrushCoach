@@ -65,7 +65,7 @@ private struct IntroView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 10) {
+            VStack(spacing: WatchMetrics.sectionSpacing) {
                 Image(systemName: "wand.and.rays")
                     .font(.system(size: 26))
                     .foregroundStyle(Color.watchMint)
@@ -82,12 +82,9 @@ private struct IntroView: View {
                     .foregroundStyle(Color.watchBlue)
 
                 Button("Start", action: model.start)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.watchMint)
-                    .foregroundStyle(Color.watchInk)
-                    .frame(maxWidth: .infinity)
+                    .watchPrimaryControl(tint: .watchMint, foreground: .watchInk)
             }
-            .padding(.horizontal, 8)
+            .watchPageFrame()
         }
     }
 }
@@ -105,7 +102,7 @@ private struct StageView: View {
         VStack(spacing: 4) {
             Spacer(minLength: 0)
             Text(eyebrow)
-                .font(.system(size: 9, weight: .bold))
+                .font(.watchEyebrow)
                 .tracking(1.1)
                 .foregroundStyle(tint)
             Text(title)
@@ -130,7 +127,7 @@ private struct StageView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
+        .watchPageFrame(bottom: 0)
         .accessibilityElement(children: .combine)
     }
 }
@@ -186,11 +183,9 @@ private struct CompleteView: View {
                     .foregroundStyle(.white.opacity(0.45))
                     .multilineTextAlignment(.center)
                 Button("Done", action: done)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.watchBlue)
-                    .frame(maxWidth: .infinity)
+                    .watchPrimaryControl(tint: .watchBlue)
             }
-            .padding(.horizontal, 8)
+            .watchPageFrame()
         }
     }
 }
@@ -211,14 +206,11 @@ private struct FailedView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white.opacity(0.8))
                 Button("Try again", action: retry)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.watchMint)
-                    .foregroundStyle(Color.watchInk)
+                    .watchPrimaryControl(tint: .watchMint, foreground: .watchInk)
                 Button("Back", action: back)
-                    .buttonStyle(.bordered)
-                    .tint(Color.watchBlue)
+                    .watchSecondaryControl(tint: .watchBlue)
             }
-            .padding(.horizontal, 8)
+            .watchPageFrame()
         }
     }
 }

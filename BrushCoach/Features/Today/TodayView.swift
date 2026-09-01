@@ -11,16 +11,15 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: CompanionMetrics.componentSpacing) {
                     hero
                     routineCard
                     techniqueCard
                 }
-                .padding(20)
+                .companionPageFrame()
             }
             .background(Color.enamelWash.ignoresSafeArea())
-            .navigationTitle("BrushCoach")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
@@ -33,7 +32,7 @@ struct TodayView: View {
                         .foregroundStyle(Color.rinseBlue)
                         .textCase(.uppercase)
                     Text(greeting)
-                        .font(.system(size: 35, weight: .semibold, design: .serif))
+                        .font(.companionHero)
                         .foregroundStyle(Color.deepInk)
                     Text(dayStatus)
                         .font(.subheadline)
@@ -63,38 +62,31 @@ struct TodayView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(22)
-        .background {
-            let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
-            shape
-                .fill(.white.opacity(0.92))
-                .shadow(color: Color.deepInk.opacity(0.08), radius: 24, y: 10)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .strokeBorder(.white, lineWidth: 1)
-        }
+        .companionCard(.feature)
     }
 
     private var routineCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("TODAY'S ROUTINE")
-                .font(.caption2.weight(.bold))
-                .tracking(1.3)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                PeriodStatusCard(period: .morning, session: store.today.morning)
-                PeriodStatusCard(period: .evening, session: store.today.evening)
+        VStack(alignment: .leading, spacing: 12) {
+            CompanionSectionHeader(title: "TODAY'S ROUTINE", detail: "Two brushes complete your daily rhythm.")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: CompanionMetrics.componentSpacing) {
+                    PeriodStatusCard(period: .morning, session: store.today.morning)
+                    PeriodStatusCard(period: .evening, session: store.today.evening)
+                }
+                VStack(spacing: CompanionMetrics.componentSpacing) {
+                    PeriodStatusCard(period: .morning, session: store.today.morning)
+                    PeriodStatusCard(period: .evening, session: store.today.evening)
+                }
             }
         }
     }
 
     private var techniqueCard: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: CompanionMetrics.rowSpacing) {
             Image(systemName: "angle")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(Color.deepInk)
-                .frame(width: 52, height: 52)
+                .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                 .background(Color.mintFresh.opacity(0.65), in: Circle())
             VStack(alignment: .leading, spacing: 4) {
                 Text("Aim for the gumline")
@@ -104,8 +96,7 @@ struct TodayView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(18)
-        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .companionCard()
     }
 
     /// Read once per body evaluation so the greeting, date and mascot mood all
@@ -181,9 +172,9 @@ private struct WatchLaunchButton: View {
             }
             .font(.headline)
             .padding(.horizontal, 18)
-            .frame(height: 58)
+            .frame(height: CompanionMetrics.controlHeight)
             .foregroundStyle(.white)
-            .background(backgroundColor, in: Capsule())
+            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(state != .idle)
@@ -254,8 +245,7 @@ private struct PeriodStatusCard: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .companionCard(.compact)
     }
 }

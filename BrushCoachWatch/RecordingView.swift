@@ -7,13 +7,13 @@ struct RecordingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: WatchMetrics.sectionSpacing) {
                 statusHeader
                 captureDisplay
+                    .watchPanel()
                 controls
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 8)
+            .watchPageFrame()
         }
         .background(Color.captureInk.ignoresSafeArea())
         .navigationTitle("Capture")
@@ -103,7 +103,7 @@ struct RecordingView: View {
                 } label: {
                     Label("Choose label", systemImage: "tag")
                 }
-                .buttonStyle(.bordered)
+                .watchSecondaryControl(tint: .rinseBlue)
 
                 Button {
                     model.begin(watchWrist: WatchWrist(rawValue: watchWrist))
@@ -111,8 +111,7 @@ struct RecordingView: View {
                     Label(model.canRecordAgain ? "Record again" : "Record 10 seconds", systemImage: "record.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.recordCoral)
+                .watchPrimaryControl(tint: .recordCoral)
 
                 Picker("Watch wrist", selection: $watchWrist) {
                     Text("Left wrist").tag(WatchWrist.left.rawValue)
@@ -125,7 +124,7 @@ struct RecordingView: View {
                 } label: {
                     Label("Cancel", systemImage: "xmark")
                 }
-                .buttonStyle(.bordered)
+                .watchSecondaryControl(tint: .recordCoral)
             }
         }
     }

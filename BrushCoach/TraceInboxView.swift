@@ -8,55 +8,70 @@ struct TraceInboxView: View {
     @State private var showingShareSheet = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if traces.isEmpty {
-                    emptyState
-                } else {
-                    traceList
-                }
+        Group {
+            if traces.isEmpty {
+                emptyState
+            } else {
+                traceList
             }
-            .background(Color.traceEnamelWash)
-            .navigationTitle("Trace inbox")
-            .toolbar {
-                if !traces.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Export all", systemImage: "square.and.arrow.up") {
-                            shareURLs = traces.map(\.url)
-                            showingShareSheet = true
-                        }
+        }
+        .background(Color.enamelWash.ignoresSafeArea())
+        .navigationTitle("Trace inbox")
+        .toolbar {
+            if !traces.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Export all", systemImage: "square.and.arrow.up") {
+                        shareURLs = traces.map(\.url)
+                        showingShareSheet = true
                     }
                 }
             }
-            .sheet(isPresented: $showingShareSheet) {
-                ActivitySheet(items: shareURLs)
-                    .presentationDetents([.medium, .large])
-            }
-            .task { reload() }
-            .onReceive(NotificationCenter.default.publisher(for: .brushCoachTraceInboxChanged)) { _ in
-                reload()
-            }
         }
-        .tint(Color.traceRinseBlue)
+        .sheet(isPresented: $showingShareSheet) {
+            ActivitySheet(items: shareURLs)
+                .presentationDetents([.medium, .large])
+        }
+        .task { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .brushCoachTraceInboxChanged)) { _ in
+            reload()
+        }
+        .tint(Color.rinseBlue)
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No traces yet", systemImage: "waveform.path.ecg")
-        } description: {
-            Text(errorMessage ?? "Record a labelled 10-second sample on Apple Watch. It will appear here when transferred.")
-        } actions: {
-            Button("Check again") { reload() }
+        ScrollView {
+            VStack(spacing: 18) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(Color.rinseBlue)
+                    .frame(width: 72, height: 72)
+                    .background(Color.rinseBlue.opacity(0.12), in: Circle())
+
+                VStack(spacing: 6) {
+                    Text("No traces yet")
+                        .font(.companionFeatureTitle)
+                        .foregroundStyle(Color.deepInk)
+                    Text(errorMessage ?? "Record a labelled 10-second sample on Apple Watch. It will appear here when transferred.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button("Check again") { reload() }
+                    .buttonStyle(CompanionPrimaryButtonStyle())
+            }
+            .companionCard(.feature)
+            .companionPageFrame(top: 24)
         }
     }
 
     private var traceList: some View {
-        List {
-            Section {
+        ScrollView {
+            LazyVStack(spacing: CompanionMetrics.sectionSpacing) {
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "lock.shield.fill")
                         .font(.title2)
-                        .foregroundStyle(Color.traceRinseBlue)
+                        .foregroundStyle(Color.rinseBlue)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("On-device dataset")
                             .font(.headline)
@@ -65,16 +80,18 @@ struct TraceInboxView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 4)
-            }
+                .companionCard()
 
-            Section("Recordings") {
-                ForEach(traces) { file in
-                    TraceRow(file: file)
+                CompanionSection(title: "RECORDINGS", detail: "Share individual captures or export the complete set.") {
+                    LazyVStack(spacing: CompanionMetrics.componentSpacing) {
+                        ForEach(traces) { file in
+                            TraceRow(file: file)
+                        }
+                    }
                 }
             }
+            .companionPageFrame()
         }
-        .scrollContentBackground(.hidden)
     }
 
     private func reload() {
@@ -99,9 +116,9 @@ private struct TraceRow: View {
                 Text(sideAbbreviation)
                     .font(.caption2.monospaced())
             }
-            .foregroundStyle(Color.traceRinseBlue)
-            .frame(width: 38, height: 46)
-            .background(Color.traceRinseBlue.opacity(0.11), in: RoundedRectangle(cornerRadius: 11))
+            .foregroundStyle(Color.rinseBlue)
+            .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
+            .background(Color.rinseBlue.opacity(0.11), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.trace.metadata.label.displayName)
@@ -123,7 +140,7 @@ private struct TraceRow: View {
             }
             .buttonStyle(.borderless)
         }
-        .padding(.vertical, 5)
+        .companionCard(.compact)
     }
 
     private var sideAbbreviation: String {
@@ -134,9 +151,4 @@ private struct TraceRow: View {
         case nil: file.trace.metadata.label == .idle ? "ID" : "TR"
         }
     }
-}
-
-private extension Color {
-    static let traceEnamelWash = Color(red: 0.945, green: 0.975, blue: 0.985)
-    static let traceRinseBlue = Color(red: 0.03, green: 0.48, blue: 0.72)
 }

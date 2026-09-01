@@ -79,11 +79,11 @@ private struct ReadyView: View {
             content(compact: false)
             content(compact: true)
         }
-        .padding(.horizontal, 8)
+        .watchPageFrame(bottom: 0)
     }
 
     private func content(compact: Bool) -> some View {
-        VStack(spacing: compact ? 6 : 9) {
+        VStack(spacing: compact ? 6 : WatchMetrics.sectionSpacing) {
             WatchDentalArch(completed: 0, active: nil)
                 .frame(height: compact ? 42 : 54)
                 .accessibilityHidden(true)
@@ -102,9 +102,7 @@ private struct ReadyView: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.watchMint)
-            .foregroundStyle(Color.watchInk)
+            .watchPrimaryControl(tint: .watchMint, foreground: .watchInk)
             .accessibilityHint("Starts a two-minute guided session")
 
             if !compact {
@@ -132,7 +130,7 @@ private struct CountdownView: View {
                 .foregroundStyle(.white.opacity(0.7))
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
+        .watchPageFrame(bottom: 0)
         .accessibilityElement(children: .combine)
     }
 }
@@ -155,7 +153,7 @@ private struct ActiveBrushView: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 9)
+            .watchPageFrame(bottom: 0)
         }
     }
 
@@ -213,8 +211,7 @@ private struct ActiveBrushView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
-        .tint(tint)
+        .watchSecondaryControl(tint: tint)
     }
 
     /// The screen is barely looked at mid-session, so this line stays quiet and
@@ -249,7 +246,7 @@ private struct CompletionView: View {
             content(compact: false)
             content(compact: true)
         }
-        .padding(.horizontal, 8)
+        .watchPageFrame(bottom: 0)
     }
 
     private func content(compact: Bool) -> some View {
@@ -295,14 +292,11 @@ private struct CompletionView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .tint(Color.watchMint)
+                .watchSecondaryControl(tint: .watchMint)
             }
 
             Button("Done", action: model.finishSummary)
-                .buttonStyle(.borderedProminent)
-                .tint(Color.watchBlue)
-                .frame(maxWidth: .infinity)
+                .watchPrimaryControl(tint: .watchBlue)
         }
     }
 
@@ -380,10 +374,9 @@ private struct FailureView: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
             Button("Back", action: dismiss)
-                .buttonStyle(.borderedProminent)
-                .tint(Color.watchBlue)
+                .watchPrimaryControl(tint: .watchBlue)
         }
-        .padding(.horizontal, 10)
+        .watchPageFrame(bottom: 0)
     }
 }
 
@@ -421,6 +414,9 @@ private struct WatchMoreView: View {
             }
         }
         .navigationTitle("More")
+        .scrollContentBackground(.hidden)
+        .background(Color.watchInk.ignoresSafeArea())
+        .tint(Color.watchMint)
     }
 }
 

@@ -8,11 +8,11 @@ struct PromptToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: CompanionMetrics.rowSpacing) {
             Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(tint)
-                .frame(width: 38, height: 38)
+                .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                 .background(tint.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Color.deepInk)
@@ -23,7 +23,7 @@ struct PromptToggleRow: View {
                 .labelsHidden()
                 .tint(Color.mintDeep)
         }
-        .padding(.vertical, 5)
+        .frame(minHeight: 52)
         .sensoryFeedback(.selection, trigger: isOn)
     }
 }

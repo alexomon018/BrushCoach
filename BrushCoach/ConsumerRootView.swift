@@ -16,7 +16,7 @@ struct ConsumerRootView: View {
                 OnboardingView { hasSeenOnboarding = true }
             }
         }
-        .preferredColorScheme(.light)
+        .preferredColorScheme(hasSeenOnboarding ? .light : .dark)
     }
 
     private var tabs: some View {

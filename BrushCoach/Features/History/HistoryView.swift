@@ -12,7 +12,7 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 14) {
+                LazyVStack(spacing: CompanionMetrics.componentSpacing) {
                     WeekRhythmCard(statuses: weekStatuses, streak: store.streak)
                         .staggeredReveal(index: 0)
 
@@ -25,8 +25,7 @@ struct HistoryView: View {
                         sessionList
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 28)
+                .companionPageFrame()
                 .revealGroup()
             }
             .background(Color.enamelWash.ignoresSafeArea())
@@ -84,7 +83,6 @@ struct HistoryView: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Color.rinseBlue)
         }
-        .padding(.top, 10)
     }
 
     private var sessionList: some View {
@@ -124,7 +122,7 @@ private struct WeekRhythmCard: View {
                         .tracking(1.4)
                         .foregroundStyle(Color.rinseBlue)
                     Text(weekTitle)
-                        .font(.system(size: 30, weight: .semibold, design: .serif))
+                        .font(.companionFeatureTitle)
                         .foregroundStyle(Color.deepInk)
                 }
                 Spacer()
@@ -145,8 +143,7 @@ private struct WeekRhythmCard: View {
                 }
             }
         }
-        .padding(22)
-        .premiumCard(cornerRadius: 28)
+        .companionCard(.feature)
     }
 
     private func dayColumn(_ status: RoutineDayStatus) -> some View {
@@ -198,8 +195,7 @@ private struct EmptyHistoryCard: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .padding(26)
-        .premiumCard(cornerRadius: 26)
+        .companionCard(.feature)
     }
 }
 
@@ -215,7 +211,7 @@ private struct HistorySessionCard: View {
                     Image(systemName: session.period == .morning ? "sun.max.fill" : "moon.stars.fill")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(session.period == .morning ? Color.rinseBlue : Color.sketchLavender)
-                        .frame(width: 48, height: 48)
+                        .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                         .background(iconBackground, in: Circle())
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -235,7 +231,7 @@ private struct HistorySessionCard: View {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(Duration.seconds(session.duration), format: .time(pattern: .minuteSecond))
-                            .font(.system(.body, design: .rounded, weight: .bold).monospacedDigit())
+                            .font(.companionMetric.monospacedDigit())
                             .foregroundStyle(Color.deepInk)
                         Label(
                             "\(session.zonesCompleted)/\(session.plannedZones)",
@@ -258,8 +254,7 @@ private struct HistorySessionCard: View {
                     .frame(width: 36, height: 44)
             }
         }
-        .padding(12)
-        .premiumCard(cornerRadius: 22)
+        .companionCard(.compact)
     }
 
     private var iconBackground: Color {

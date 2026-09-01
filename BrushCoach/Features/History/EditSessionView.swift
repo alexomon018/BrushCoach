@@ -38,22 +38,21 @@ struct EditSessionView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: CompanionMetrics.sectionSpacing) {
                     detailsCard
                         .staggeredReveal(index: 0)
 
-                    CompanionSectionHeader(title: "AFTER BRUSHING", detail: "Keep the session record accurate.")
+                    CompanionSection(title: "AFTER BRUSHING", detail: "Keep the session record accurate.") {
+                        promptsCard
+                    }
                         .staggeredReveal(index: 1)
-
-                    promptsCard
-                        .staggeredReveal(index: 2)
 
                     if !isNew {
                         deleteButton
-                            .staggeredReveal(index: 3)
+                            .staggeredReveal(index: 2)
                     }
                 }
-                .padding(20)
+                .companionPageFrame()
                 .revealGroup()
             }
             .background(Color.enamelWash.ignoresSafeArea())
@@ -91,8 +90,7 @@ struct EditSessionView: View {
                 )
             }
         }
-        .padding(18)
-        .premiumCard(cornerRadius: 24)
+        .companionCard()
     }
 
     private var promptsCard: some View {
@@ -113,8 +111,7 @@ struct EditSessionView: View {
                 isOn: $draft.tongueCleaned
             )
         }
-        .padding(14)
-        .premiumCard(cornerRadius: 24)
+        .companionCard()
     }
 
     private var deleteButton: some View {
@@ -126,7 +123,7 @@ struct EditSessionView: View {
                 .font(.headline)
                 .foregroundStyle(Color.coachCoral)
                 .frame(maxWidth: .infinity)
-                .frame(height: 54)
+                .frame(height: CompanionMetrics.controlHeight)
                 .background(Color.coachCoral.opacity(0.1), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(TactileCardButtonStyle())
@@ -139,10 +136,10 @@ struct EditSessionView: View {
     }
 
     private func editorMetric(title: String, value: String, systemImage: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: CompanionMetrics.rowSpacing) {
             Image(systemName: systemImage)
                 .foregroundStyle(Color.rinseBlue)
-                .frame(width: 36, height: 36)
+                .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                 .background(Color.rinseBlue.opacity(0.1), in: Circle())
             Text(title)
                 .font(.subheadline.weight(.semibold))

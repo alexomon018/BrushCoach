@@ -6,11 +6,11 @@ struct ResourceRow: View {
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: CompanionMetrics.rowSpacing) {
             Image(systemName: systemImage)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color.rinseBlue)
-                .frame(width: 46, height: 46)
+                .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
                 .background(Color.rinseBlue.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline).foregroundStyle(Color.deepInk)
@@ -21,7 +21,6 @@ struct ResourceRow: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.tertiary)
         }
-        .padding(17)
-        .premiumCard(cornerRadius: 22)
+        .companionCard()
     }
 }
