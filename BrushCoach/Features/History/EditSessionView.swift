@@ -81,14 +81,6 @@ struct EditSessionView: View {
                     systemImage: "timer"
                 )
             }
-            Divider()
-            Stepper(value: $draft.zonesCompleted, in: 0...6) {
-                editorMetric(
-                    title: "Zones",
-                    value: "\(draft.zonesCompleted) of 6",
-                    systemImage: "circle.hexagongrid.fill"
-                )
-            }
         }
         .companionCard()
     }

@@ -5,7 +5,7 @@ import WatchKit
 
 /// The watch-side shell around `SessionCoordinator`.
 ///
-/// The pacing rules — countdown, zone advance, pause, ending early — live in
+/// The timing rules — countdown, pause, ending early — live in
 /// BrushKit where they are unit-tested. What is left here is the part that can
 /// only exist on a Watch: haptics, extended runtime, Core Motion, and the
 /// handedness and calibration state that decide whether analysis runs at all.
@@ -29,14 +29,9 @@ final class CoachViewModel {
 
     private(set) var phase: Phase = .ready
     private(set) var elapsed: TimeInterval = 0
-    private(set) var currentZoneIndex = 0
 
     /// What motion analysis is seeing right now, or `nil` when it is not running.
     private(set) var liveActivity: MotionActivity?
-    private(set) var liveBrushingSeconds: TimeInterval = 0
-    /// Latest confident zone estimate. `nil` whenever there is no calibration
-    /// profile, or the estimate is not confident enough to show.
-    private(set) var liveZone: BrushZoneLabel?
 
     @ObservationIgnored private var coordinator = SessionCoordinator()
     @ObservationIgnored private let runtime = ExtendedRuntimeController()
@@ -47,44 +42,58 @@ final class CoachViewModel {
     @ObservationIgnored private var didSenseMotion = false
     @ObservationIgnored private var lastStrokeRateNudge: Date?
     @ObservationIgnored private var isStoppingMotionDeliberately = false
+    /// True from the moment analysis starts until the session ends, across any
+    /// number of pauses. A resume must not restart the sensor for a session
+    /// that never had it running in the first place.
+    @ObservationIgnored private var isAnalyzingMotion = false
+    @ObservationIgnored private var calibrationProfile: PersonalCalibrationProfile?
 
     /// The dial only renders whole seconds, and this runs for two minutes under
     /// extended runtime on a small battery.
     private static let tickInterval = Duration.milliseconds(250)
 
-    /// Resolved fresh each time: the user can move the Watch to the other wrist
-    /// or change their answer between sessions.
-    var capability: SensingCapability {
-        HandednessProfile(
+    /// Whether the Watch is on the brushing hand. The user can move it to the
+    /// other wrist or change their answer between sessions, so this is resolved
+    /// again on every `refreshDeviceState()` rather than once at launch.
+    private(set) var capability: SensingCapability = .unknown
+
+    /// Whether a usable calibration profile exists. Drives the More menu entry
+    /// and whether zone estimates run at all.
+    private(set) var hasCalibration = false
+
+    init() {
+        refreshDeviceState()
+    }
+
+    /// Re-reads the two pieces of state that live outside this process.
+    ///
+    /// Both used to be computed properties, which meant every render that
+    /// touched them decoded `RoutinePreferences` out of `UserDefaults` and read
+    /// and decoded the calibration profile off disk — three of each per render
+    /// of the More screen. They change when the user recalibrates or answers
+    /// the handedness question, so refreshing on appearance and at session
+    /// start covers every case that can actually move them.
+    func refreshDeviceState() {
+        // A load failure and an absent profile are both "no usable calibration"
+        // here; the distinction only matters on the calibration screen itself.
+        calibrationProfile = try? CalibrationProfileStore.load()
+        hasCalibration = calibrationProfile != nil
+        capability = HandednessProfile(
             watchWrist: WKInterfaceDevice.current().wristLocation == .left ? .left : .right,
             brushingHand: WatchRoutinePreferences.current.brushingHand
         ).capability
     }
 
-    /// Whether a usable calibration profile exists. Drives the More menu entry
-    /// and whether zone estimates run at all.
-    var hasCalibration: Bool { calibrationProfile != nil }
-
-    /// A load failure and an absent profile are both "no usable calibration"
-    /// here; the distinction only matters on the calibration screen itself.
-    private var calibrationProfile: PersonalCalibrationProfile? {
-        try? CalibrationProfileStore.load()
-    }
-
     var isBusy: Bool { coordinator.isBusy }
     var isPaused: Bool { coordinator.isPaused }
-    var zoneSecondsRemaining: Int { coordinator.zoneSecondsRemaining }
+    var secondsRemaining: Int { coordinator.sessionSecondsRemaining }
     var progress: Double { coordinator.progress }
-    var scheduledZone: BrushZoneLabel { coordinator.scheduledZone }
-
-    var zoneName: String {
-        ["Upper right", "Upper centre", "Upper left", "Lower left", "Lower centre", "Lower right"][currentZoneIndex]
-    }
 
     // MARK: - Intent
 
     func startSession() {
         guard tickTask == nil else { return }
+        refreshDeviceState()
         resetLiveReadings()
         apply(coordinator.start(at: .now))
         startTicking()
@@ -147,21 +156,28 @@ final class CoachViewModel {
         case .stopMotionAnalysis:
             stopMotionAnalysis()
         case .suspendMotionAnalysis:
-            // Motion keeps arriving while paused; none of it is this session's
+            // None of the motion arriving during a pause is this session's
             // brushing, and a window spanning the pause would be interpolated
-            // across the gap.
+            // across the gap. Powering the sensor down rather than discarding
+            // its samples is what actually saves the battery — and it stops a
+            // long pause from spending the recorder's hard ceiling, which is
+            // measured in sensor time and does not know the session is held.
             analyzer.suspend()
+            suspendMotionCapture()
             liveActivity = nil
-            liveZone = nil
         case .countdownTicked:
             WKInterfaceDevice.current().play(.click)
-        case .sessionStarted, .sessionResumed:
+        case .sessionStarted:
             WKInterfaceDevice.current().play(.start)
+        case .sessionResumed:
+            WKInterfaceDevice.current().play(.start)
+            resumeMotionCapture()
         case .sessionPaused:
             WKInterfaceDevice.current().play(.stop)
         case .advancedToZone:
-            // A prominent tap: the wrist is moving and often out of sight.
-            WKInterfaceDevice.current().play(.notification)
+            // Free brushing has no timed zone changes. This legacy coordinator
+            // effect is intentionally silent if received from an older plan.
+            break
         case .finished(let outcome):
             record(outcome)
         case .failed(let message):
@@ -175,7 +191,6 @@ final class CoachViewModel {
     /// carries a payload the coordinator does not have.
     private func syncFromCoordinator() {
         elapsed = coordinator.elapsed
-        currentZoneIndex = coordinator.currentZoneIndex
         switch coordinator.phase {
         case .ready: phase = .ready
         case .countdown(let remaining): phase = .countdown(remaining)
@@ -185,7 +200,7 @@ final class CoachViewModel {
         }
     }
 
-    /// Builds and stores the finished session. The pacer's facts arrive in
+    /// Builds and stores the finished session. The timer's facts arrive in
     /// `outcome`; analysis is attached here and only here, so it stays obvious
     /// that the former never depend on the latter.
     private func record(_ outcome: SessionCoordinator.PacerOutcome) {
@@ -198,7 +213,7 @@ final class CoachViewModel {
             analysis: didSenseMotion ? analyzer.currentAnalysis : nil,
             source: .watch
         )
-        try? WatchSessionStore.upsert(session)
+        _ = try? WatchSessionStore.upsert(session)
         WatchTraceTransfer.shared.enqueue(session)
         phase = .completed(
             SessionSummary(session: session, nextSteps: pendingSteps(), capability: capability)
@@ -225,9 +240,8 @@ final class CoachViewModel {
 
     private func resetLiveReadings() {
         liveActivity = nil
-        liveBrushingSeconds = 0
-        liveZone = nil
         didSenseMotion = false
+        isAnalyzingMotion = false
         lastStrokeRateNudge = nil
         analyzer.reset()
     }
@@ -242,46 +256,82 @@ final class CoachViewModel {
         // Rebuilt per session: the profile can be created, replaced, or cleared
         // between sessions, and a stale classifier is worse than none.
         analyzer = LiveSessionAnalyzer(profile: calibrationProfile)
+        isAnalyzingMotion = true
+        beginCapture()
+    }
+
+    /// Restarts the sensor after a pause without touching the analyzer: the
+    /// seconds it measured before the pause belong to this session and have to
+    /// survive it.
+    private func resumeMotionCapture() {
+        guard isAnalyzingMotion, motionTask == nil else { return }
+        beginCapture()
+    }
+
+    private func beginCapture() {
         isStoppingMotionDeliberately = false
 
         motionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             // A hard ceiling well past the routine, so an abandoned session can
-            // never leave device motion running.
+            // never leave device motion running. It applies per capture stretch;
+            // stopping through a pause is what keeps a held session from
+            // spending it while nothing is being measured.
             let ceiling = coordinator.timeline.totalDuration + 60
             do {
-                _ = try await recorder.recordUntilStopped(maxDuration: ceiling) { [weak self] sample, _ in
+                _ = try await recorder.recordUntilStopped(
+                    maxDuration: ceiling,
+                    // Analysis is streamed sample by sample below, so the
+                    // finished trace is never read. Keeping it cost about a
+                    // megabyte held for the length of the session.
+                    retainsSamples: false
+                ) { [weak self] sample, _ in
                     guard let self else { return true }
-                    // Paused: the pacer is not counting, so neither does analysis.
+                    // The sensor is stopped on pause, so this only covers the
+                    // sample or two already in flight when that happens.
                     guard phase == .brushing else { return false }
                     didSenseMotion = true
-                    for insight in analyzer.ingest(sample, scheduledZone: coordinator.scheduledZone) {
+                    for insight in analyzer.ingest(sample) {
                         handle(insight)
                     }
-                    liveActivity = analyzer.currentActivity
-                    liveZone = analyzer.currentZone
-                    liveBrushingSeconds = analyzer.currentAnalysis.activeBrushingSeconds
+                    // Assigning an `@Observable` property notifies on every
+                    // write, equal value or not, and the analyzer only emits a
+                    // feature window once a second. Writing this per sample
+                    // invalidated the whole active screen fifty times for each
+                    // value that could actually differ.
+                    let activity = analyzer.currentActivity
+                    if activity != liveActivity { liveActivity = activity }
                     return false
                 }
             } catch is CancellationError {
-                // Expected: `stopMotionAnalysis` cancels the recorder when the
-                // session ends normally.
+                // Expected: pausing and ending both cancel the recorder.
             } catch {
                 // Core Motion gave up mid-session. Keep what was measured, but
                 // never let a truncated recording be read as a whole session.
                 if !isStoppingMotionDeliberately { analyzer.markRecordingIncomplete() }
             }
+            // Only reached without cancellation when the ceiling was hit; the
+            // cancelling paths have already cleared this and may have started a
+            // fresh capture that must not be dropped here.
+            if !Task.isCancelled { motionTask = nil }
         }
     }
 
-    private func stopMotionAnalysis() {
+    /// Cancels the capture but keeps the session's analysis alive, so a resume
+    /// can pick it back up.
+    private func suspendMotionCapture() {
         guard motionTask != nil else { return }
         isStoppingMotionDeliberately = true
         motionTask?.cancel()
         motionTask = nil
         recorder.cancel()
+    }
+
+    private func stopMotionAnalysis() {
+        guard isAnalyzingMotion else { return }
+        suspendMotionCapture()
+        isAnalyzingMotion = false
         liveActivity = nil
-        liveZone = nil
     }
 
     private func handle(_ insight: SessionInsight) {

@@ -16,10 +16,7 @@ struct RoutineView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CompanionMetrics.sectionSpacing) {
-                    RoutineRailCard(preferences: settings.preferences, today: store.today)
-                        .staggeredReveal(index: 0)
-
-                    CompanionSection(title: "TWICE DAILY", detail: "A reminder pauses after that brush is complete.") {
+                    CompanionSection(title: "REMINDERS", detail: "Each reminder pauses after that brush is complete.") {
                         VStack(spacing: CompanionMetrics.componentSpacing) {
                             PeriodScheduleCard(
                                 period: .morning,
@@ -36,33 +33,44 @@ struct RoutineView: View {
                             )
                         }
                     }
-                    .staggeredReveal(index: 1)
+                    .staggeredReveal(index: 0)
 
-                    CompanionSection(title: "FINISH THE ROUTINE", detail: "Choose the prompts that help without adding noise.") {
+                    CompanionSection(title: "AFTER BRUSHING", detail: "Choose the prompts that are useful to you.") {
                         promptsCard
                     }
-                    .staggeredReveal(index: 2)
+                    .staggeredReveal(index: 1)
 
-                    CompanionSection(title: "WHEN THE DAY ENDS", detail: "A late-night brush closes the day it finished.") {
-                        dayEndCard
-                    }
-                    .staggeredReveal(index: 3)
-
-                    CompanionSection(title: "STROKE CHECKING", detail: "Available only when the Watch is on your brushing hand.") {
+                    CompanionSection(title: "ZONE MAPPING", detail: "The Watch needs motion from your brushing hand to build a mouth map.") {
                         strokeCheckingCard
                     }
-                    .staggeredReveal(index: 4)
+                    .staggeredReveal(index: 2)
 
                     CompanionSection(title: "CONNECTIONS", detail: "Optional services that support your routine.") {
                         connectionsCard
                     }
-                    .staggeredReveal(index: 5)
+                    .staggeredReveal(index: 3)
+
+                    #if DEBUG
+                    CompanionSection(title: "DEVELOPER", detail: "Tools for validating the motion classifier.") {
+                        NavigationLink {
+                            TraceInboxView()
+                        } label: {
+                            ResourceRow(
+                                title: "Motion trace inbox",
+                                detail: "Inspect transferred Watch recordings",
+                                systemImage: "waveform.path.ecg"
+                            )
+                        }
+                        .buttonStyle(TactileCardButtonStyle())
+                    }
+                    .staggeredReveal(index: 4)
+                    #endif
                 }
                 .companionPageFrame()
                 .revealGroup()
             }
             .background(Color.enamelWash.ignoresSafeArea())
-            .navigationTitle("Routine")
+            .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
         }
         .sensoryFeedback(.success, trigger: successFeedback)
@@ -83,7 +91,7 @@ struct RoutineView: View {
     }
 
     /// States the capability plainly, including when it is absent. Telling
-    /// someone their strokes cannot be read is far better than reporting that
+    /// someone their motion cannot be read is far better than reporting that
     /// they did not brush.
     private var strokeCheckingCard: some View {
         let handedness = HandednessProfile(
@@ -114,6 +122,16 @@ struct RoutineView: View {
 
             Divider()
 
+            Label(
+                "After choosing your brushing hand, open BrushCoach on the Watch and use More → Calibrate zones.",
+                systemImage: "scope"
+            )
+            .font(.caption)
+            .foregroundStyle(Color.rinseBlue)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 9) {
                 Text("BRUSHING HAND")
                     .font(.caption2.weight(.bold))
@@ -131,12 +149,9 @@ struct RoutineView: View {
                     Text("Your Watch reports it is on your \(wrist == .left ? "left" : "right") wrist.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    // Offered, never forced. Some people will happily switch
-                    // wrists to get stroke checking; most will not, and the app
-                    // works either way.
                     if handedness.couldEnableBySwitchingWrist {
                         Label(
-                            "Wear your Watch on your other wrist while brushing to turn stroke checking on.",
+                            "Wear your Watch on your other wrist while brushing to turn zone mapping on.",
                             systemImage: "arrow.left.arrow.right"
                         )
                         .font(.caption2)

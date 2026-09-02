@@ -1,12 +1,80 @@
 import Foundation
 
+/// Stable, schema-friendly storage for the classifier's six mouth regions.
+/// Fixed fields keep future trend queries simple and avoid leaking capture-only
+/// labels such as `idle` into a session result.
+public struct ZoneDurations: Codable, Hashable, Sendable {
+    public var upperLeft: TimeInterval
+    public var upperCentre: TimeInterval
+    public var upperRight: TimeInterval
+    public var lowerLeft: TimeInterval
+    public var lowerCentre: TimeInterval
+    public var lowerRight: TimeInterval
+
+    public init(
+        upperLeft: TimeInterval = 0,
+        upperCentre: TimeInterval = 0,
+        upperRight: TimeInterval = 0,
+        lowerLeft: TimeInterval = 0,
+        lowerCentre: TimeInterval = 0,
+        lowerRight: TimeInterval = 0
+    ) {
+        self.upperLeft = max(0, upperLeft)
+        self.upperCentre = max(0, upperCentre)
+        self.upperRight = max(0, upperRight)
+        self.lowerLeft = max(0, lowerLeft)
+        self.lowerCentre = max(0, lowerCentre)
+        self.lowerRight = max(0, lowerRight)
+    }
+
+    public subscript(zone: BrushZoneLabel) -> TimeInterval {
+        get {
+            switch zone {
+            case .upperLeft: upperLeft
+            case .upperCentre: upperCentre
+            case .upperRight: upperRight
+            case .lowerLeft: lowerLeft
+            case .lowerCentre: lowerCentre
+            case .lowerRight: lowerRight
+            case .transition, .idle: 0
+            }
+        }
+        set {
+            let value = max(0, newValue)
+            switch zone {
+            case .upperLeft: upperLeft = value
+            case .upperCentre: upperCentre = value
+            case .upperRight: upperRight = value
+            case .lowerLeft: lowerLeft = value
+            case .lowerCentre: lowerCentre = value
+            case .lowerRight: lowerRight = value
+            case .transition, .idle: break
+            }
+        }
+    }
+
+    public var total: TimeInterval {
+        BrushZoneLabel.mouthZones.reduce(0) { $0 + self[$1] }
+    }
+}
+
+/// The fixed two-minute routine gives every one of the six classifier regions
+/// an equal 20-second target. A danger area is deliberately a little below that
+/// target so a one-window boundary wobble does not turn into a warning.
+public enum ZoneCoverageStandard {
+    public static let sessionDuration: TimeInterval = 120
+    public static let targetPerZone: TimeInterval = 20
+    public static let dangerThreshold: TimeInterval = 16
+    public static let minimumClassifiedSeconds: TimeInterval = 72
+}
+
 /// What motion analysis observed during one session.
 ///
 /// Every field is an observation, not a verdict. Nothing here decides whether
 /// the session counted — `BrushSession.completedRoutine` still depends only on
 /// the pacer, so a failed or absent reading can never take away a streak.
 public struct SessionAnalysis: Codable, Hashable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     /// Seconds the wrist was actually moving in a brushing rhythm. This is the
     /// number worth showing: most people's "two minutes" includes wetting the
@@ -29,11 +97,9 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
     /// Zero when no calibration profile was loaded.
     public var confidentZoneWindows: Int
 
-    /// Of those confident windows, the fraction whose estimated zone matched the
-    /// zone the pacer was prompting. Deliberately named agreement, not accuracy:
-    /// it measures whether the user followed the prompt *and* whether the
-    /// classifier agrees, and cannot separate the two. `nil` when nothing was
-    /// confident enough to compare.
+    /// Legacy/offline calibration metric: the fraction of confident estimates
+    /// matching a supplied reference label. Free-brushing sessions do not pass
+    /// a prompt, so this remains `nil` for new user sessions.
     public var zoneAgreement: Double?
 
     /// Whether a calibration profile was loaded and zone estimation actually
@@ -41,6 +107,10 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
     /// confident" — which are the same zero to a reader, and completely
     /// different things to diagnose.
     public var zoneEstimationAttempted: Bool
+
+    /// Confident, dwell-filtered brushing time attributed to each of the six
+    /// classifier regions. Time with no reliable label remains unassigned.
+    public var zoneDurations: ZoneDurations
 
     /// Wall-clock span the analysed windows actually covered. A recorder that
     /// dies ten seconds into a two-minute session still produces windows, and
@@ -62,6 +132,7 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
         confidentZoneWindows: Int = 0,
         zoneAgreement: Double? = nil,
         zoneEstimationAttempted: Bool = false,
+        zoneDurations: ZoneDurations = ZoneDurations(),
         coveredSeconds: TimeInterval = 0,
         recordingCompleted: Bool = true
     ) {
@@ -74,8 +145,29 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
         self.confidentZoneWindows = max(0, confidentZoneWindows)
         self.zoneAgreement = zoneAgreement.map { min(1, max(0, $0)) }
         self.zoneEstimationAttempted = zoneEstimationAttempted
+        self.zoneDurations = zoneDurations
         self.coveredSeconds = max(0, coveredSeconds)
         self.recordingCompleted = recordingCompleted
+    }
+
+    /// Field-by-field decoding keeps sessions written by analysis schema v1
+    /// readable; those records simply have no per-zone timing data.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            activeBrushingSeconds: try container.decodeIfPresent(TimeInterval.self, forKey: .activeBrushingSeconds) ?? 0,
+            fastStrokeSeconds: try container.decodeIfPresent(TimeInterval.self, forKey: .fastStrokeSeconds) ?? 0,
+            positionChanges: try container.decodeIfPresent(Int.self, forKey: .positionChanges) ?? 0,
+            longestSinglePositionSeconds: try container.decodeIfPresent(TimeInterval.self, forKey: .longestSinglePositionSeconds) ?? 0,
+            medianStrokeRatePerMinute: try container.decodeIfPresent(Double.self, forKey: .medianStrokeRatePerMinute) ?? 0,
+            windowCount: try container.decodeIfPresent(Int.self, forKey: .windowCount) ?? 0,
+            confidentZoneWindows: try container.decodeIfPresent(Int.self, forKey: .confidentZoneWindows) ?? 0,
+            zoneAgreement: try container.decodeIfPresent(Double.self, forKey: .zoneAgreement),
+            zoneEstimationAttempted: try container.decodeIfPresent(Bool.self, forKey: .zoneEstimationAttempted) ?? false,
+            zoneDurations: try container.decodeIfPresent(ZoneDurations.self, forKey: .zoneDurations) ?? ZoneDurations(),
+            coveredSeconds: try container.decodeIfPresent(TimeInterval.self, forKey: .coveredSeconds) ?? 0,
+            recordingCompleted: try container.decodeIfPresent(Bool.self, forKey: .recordingCompleted) ?? true
+        )
     }
 
     /// True when too little motion arrived to say anything at all. Report this
@@ -95,6 +187,21 @@ public struct SessionAnalysis: Codable, Hashable, Sendable {
     /// session it missed.
     public func isInconclusive(forSessionLasting duration: TimeInterval) -> Bool {
         isInconclusive || !recordingCompleted || coverage(ofSessionLasting: duration) < 0.8
+    }
+
+    /// Danger feedback is withheld when zone estimation was absent, truncated,
+    /// or too uncertain to cover most of the routine. An incomplete reading is
+    /// information about the sensor, not evidence that six areas were neglected.
+    public func hasUsableZoneCoverage(forSessionLasting duration: TimeInterval) -> Bool {
+        zoneEstimationAttempted
+            && !isInconclusive(forSessionLasting: duration)
+            && zoneDurations.total >= ZoneCoverageStandard.minimumClassifiedSeconds
+    }
+
+    public var underBrushedZones: [BrushZoneLabel] {
+        BrushZoneLabel.mouthZones
+            .filter { zoneDurations[$0] < ZoneCoverageStandard.dangerThreshold }
+            .sorted { zoneDurations[$0] < zoneDurations[$1] }
     }
 }
 
@@ -126,19 +233,81 @@ public struct LiveSessionAnalyzerConfiguration: Hashable, Sendable {
     /// records whether estimation ran at all so a silent session can be told
     /// apart from an uncalibrated one.
     public var zoneConfidenceThreshold: Double
+    /// A smoothed label must repeat on two successive one-second hops before
+    /// its buffered time is accepted. This removes one-off zone flashes without
+    /// throwing away the start of a real dwell.
+    public var minimumZoneDwellWindows: Int
 
     public init(
         activity: ActivityDetectorConfiguration = ActivityDetectorConfiguration(),
         highStrokeRatePerMinute: Double = 240,
         singlePositionNudgeSeconds: TimeInterval = 28,
         positionChangeThresholdDegrees: Double = 25,
-        zoneConfidenceThreshold: Double = 0.35
+        zoneConfidenceThreshold: Double = 0.35,
+        minimumZoneDwellWindows: Int = 2
     ) {
         self.activity = activity
         self.highStrokeRatePerMinute = highStrokeRatePerMinute
         self.singlePositionNudgeSeconds = singlePositionNudgeSeconds
         self.positionChangeThresholdDegrees = positionChangeThresholdDegrees
         self.zoneConfidenceThreshold = zoneConfidenceThreshold
+        self.minimumZoneDwellWindows = max(1, minimumZoneDwellWindows)
+    }
+}
+
+/// Buffers a possible zone switch until it persists, then backfills the time
+/// that established the dwell. `interrupt` deliberately leaves uncertain time
+/// unassigned instead of guessing that the previous zone continued.
+public struct ZoneDwellAccumulator: Hashable, Sendable {
+    public let minimumConsecutiveWindows: Int
+    public private(set) var durations = ZoneDurations()
+
+    private var stableZone: BrushZoneLabel?
+    private var candidateZone: BrushZoneLabel?
+    private var candidateWindows = 0
+    private var candidateSeconds: TimeInterval = 0
+
+    public init(minimumConsecutiveWindows: Int = 2) {
+        self.minimumConsecutiveWindows = max(1, minimumConsecutiveWindows)
+    }
+
+    public mutating func ingest(zone: BrushZoneLabel, elapsed: TimeInterval) {
+        guard BrushZoneLabel.mouthZones.contains(zone), elapsed > 0 else { return }
+
+        if stableZone == zone {
+            durations[zone] += elapsed
+            return
+        }
+
+        if candidateZone == zone {
+            candidateWindows += 1
+            candidateSeconds += elapsed
+        } else {
+            candidateZone = zone
+            candidateWindows = 1
+            candidateSeconds = elapsed
+        }
+
+        guard candidateWindows >= minimumConsecutiveWindows else { return }
+        stableZone = zone
+        durations[zone] += candidateSeconds
+        clearCandidate()
+    }
+
+    public mutating func interrupt() {
+        stableZone = nil
+        clearCandidate()
+    }
+
+    public mutating func reset() {
+        durations = ZoneDurations()
+        interrupt()
+    }
+
+    private mutating func clearCandidate() {
+        candidateZone = nil
+        candidateWindows = 0
+        candidateSeconds = 0
     }
 }
 
@@ -169,6 +338,7 @@ public struct LiveSessionAnalyzer: Sendable {
 
     private let zoneClassifier: PersonalZoneClassifier?
     private var smoother = PredictionSmoother(capacity: 3)
+    private var zoneDwell: ZoneDwellAccumulator
     private var zoneMatches = 0
     private var latestZone: BrushZoneLabel?
 
@@ -184,6 +354,9 @@ public struct LiveSessionAnalyzer: Sendable {
             changeThresholdDegrees: configuration.positionChangeThresholdDegrees
         )
         self.zoneClassifier = profile.map(PersonalZoneClassifier.init(profile:))
+        self.zoneDwell = ZoneDwellAccumulator(
+            minimumConsecutiveWindows: configuration.minimumZoneDwellWindows
+        )
         self.analysis.zoneEstimationAttempted = profile != nil
     }
 
@@ -205,8 +378,9 @@ public struct LiveSessionAnalyzer: Sendable {
         ingest(sample, scheduledZone: nil)
     }
 
-    /// `scheduledZone` is the zone the pacer is currently prompting. Passing it
-    /// enables agreement scoring; it never influences the estimate itself.
+    /// `scheduledZone` is retained for calibration tests and offline agreement
+    /// scoring. The free-brushing Watch path calls `ingest(_:)` without one; a
+    /// reference label never influences the estimate itself.
     public mutating func ingest(
         _ sample: MotionSample,
         scheduledZone: BrushZoneLabel?
@@ -237,13 +411,23 @@ public struct LiveSessionAnalyzer: Sendable {
             if reading.activity == .brushing {
                 analysis.activeBrushingSeconds += elapsed
                 strokeRates.append(reading.strokeRatePerMinute)
-                if let insight = estimateZone(features, scheduledZone: scheduledZone) {
+                if let insight = estimateZone(
+                    features,
+                    elapsed: elapsed,
+                    scheduledZone: scheduledZone
+                ) {
                     insights.append(insight)
                 }
                 if reading.strokeRatePerMinute > configuration.highStrokeRatePerMinute {
                     analysis.fastStrokeSeconds += elapsed
                     insights.append(.strokeRateHigh(ratePerMinute: reading.strokeRatePerMinute))
                 }
+            }
+
+            if reading.activity != .brushing {
+                smoother.reset()
+                zoneDwell.interrupt()
+                latestZone = nil
             }
 
             if position.ingest(features) {
@@ -285,20 +469,26 @@ public struct LiveSessionAnalyzer: Sendable {
     /// nobody reads the caveat.
     private mutating func estimateZone(
         _ features: FeatureVector,
+        elapsed: TimeInterval,
         scheduledZone: BrushZoneLabel?
     ) -> SessionInsight? {
-        guard let zoneClassifier, let prompted = scheduledZone else { return nil }
-        let smoothed = smoother.ingest(zoneClassifier.classify(features, scheduledZone: prompted))
+        guard let zoneClassifier else { return nil }
+        let smoothed = smoother.ingest(zoneClassifier.classify(features))
         guard smoothed.activity == .brushing,
               let zone = smoothed.zone,
               smoothed.confidence >= configuration.zoneConfidenceThreshold else {
+            zoneDwell.interrupt()
             latestZone = nil
             return nil
         }
         latestZone = zone
         analysis.confidentZoneWindows += 1
-        if zone == prompted { zoneMatches += 1 }
-        analysis.zoneAgreement = Double(zoneMatches) / Double(analysis.confidentZoneWindows)
+        zoneDwell.ingest(zone: zone, elapsed: elapsed)
+        analysis.zoneDurations = zoneDwell.durations
+        if let prompted = scheduledZone {
+            if zone == prompted { zoneMatches += 1 }
+            analysis.zoneAgreement = Double(zoneMatches) / Double(analysis.confidentZoneWindows)
+        }
         return .zoneEstimated(zone, confidence: smoothed.confidence)
     }
 
@@ -331,6 +521,7 @@ public struct LiveSessionAnalyzer: Sendable {
         nudgedForCurrentPosition = false
         analysis = SessionAnalysis(zoneEstimationAttempted: zoneClassifier != nil)
         smoother.reset()
+        zoneDwell.reset()
         zoneMatches = 0
         latestZone = nil
         firstWindowStart = nil

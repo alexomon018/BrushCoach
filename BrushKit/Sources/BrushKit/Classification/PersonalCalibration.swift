@@ -296,13 +296,36 @@ public struct PersonalZoneClassifier: ZoneClassifier {
         self.profile = profile
     }
 
-    public func classify(_ features: FeatureVector, scheduledZone: BrushZoneLabel) -> ClassificationResult {
+    /// Free-brushing classification has no prompted zone. A schema mismatch is
+    /// therefore reported as no estimate instead of quietly substituting a
+    /// scheduled label that the user may not be brushing.
+    public func classify(_ features: FeatureVector) -> ClassificationResult {
         guard features.schemaVersion == profile.featureSchemaVersion,
               let activityValues = values(in: features, named: profile.activityFeatureNames),
               let zoneValues = values(in: features, named: profile.zoneFeatureNames) else {
-            return PacerOnlyClassifier().classify(features, scheduledZone: scheduledZone)
+            return ClassificationResult(
+                activity: .transition,
+                zone: nil,
+                side: nil,
+                jaw: nil,
+                confidence: 0
+            )
         }
 
+        return classify(
+            activityValues: activityValues,
+            zoneValues: zoneValues
+        )
+    }
+
+    public func classify(_ features: FeatureVector, scheduledZone: BrushZoneLabel) -> ClassificationResult {
+        classify(features)
+    }
+
+    private func classify(
+        activityValues: [Double],
+        zoneValues: [Double]
+    ) -> ClassificationResult {
         let idleDistance = PersonalCalibrationBuilder.distance(
             activityValues,
             profile.idleCentre,

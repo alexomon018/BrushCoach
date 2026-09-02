@@ -20,6 +20,11 @@ final class WatchMotionRecorder {
 
     private let manager = CMMotionManager()
     private var samples: [MotionSample] = []
+    /// Counted separately from `samples`, which stays empty when the caller does
+    /// not need the trace. "No motion arrived" must stay distinguishable from
+    /// "motion arrived and was deliberately not kept".
+    private var receivedCount = 0
+    private var retainsSamples = true
     private var firstTimestamp: TimeInterval?
     private var continuation: CheckedContinuation<[MotionSample], Error>?
     private var timeoutTask: Task<Void, Never>?
@@ -37,20 +42,28 @@ final class WatchMotionRecorder {
 
     /// Records until the callback reports completion, with a hard deadline so
     /// a paused or abandoned brushing session cannot keep sensing forever.
+    ///
+    /// `retainsSamples` is for callers that need the finished trace — a
+    /// calibration capture does, a coaching session does not. Analysis is
+    /// streamed sample by sample through `onSample`, so keeping the array as
+    /// well meant holding roughly a megabyte for two minutes to throw it away.
     func recordUntilStopped(
         maxDuration: TimeInterval,
+        retainsSamples: Bool = true,
         onSample: @escaping @MainActor (MotionSample, TimeInterval) -> Bool
     ) async throws -> [MotionSample] {
-        try await capture(maxDuration: maxDuration, onSample: onSample)
+        try await capture(maxDuration: maxDuration, retainsSamples: retainsSamples, onSample: onSample)
     }
 
     private func capture(
         maxDuration: TimeInterval,
+        retainsSamples: Bool = true,
         onSample: @escaping @MainActor (MotionSample, TimeInterval) -> Bool
     ) async throws -> [MotionSample] {
         guard manager.isDeviceMotionAvailable else { throw RecordingError.deviceMotionUnavailable }
         cancel()
-        samples.reserveCapacity(Int(maxDuration * 50) + 20)
+        self.retainsSamples = retainsSamples
+        if retainsSamples { samples.reserveCapacity(Int(maxDuration * 50) + 20) }
         sampleHandler = onSample
         manager.deviceMotionUpdateInterval = 1.0 / 50.0
 
@@ -83,6 +96,7 @@ final class WatchMotionRecorder {
         continuation?.resume(throwing: CancellationError())
         continuation = nil
         samples.removeAll(keepingCapacity: true)
+        receivedCount = 0
         firstTimestamp = nil
         sampleHandler = nil
     }
@@ -111,13 +125,14 @@ final class WatchMotionRecorder {
         let start = firstTimestamp ?? sample.timestamp
         firstTimestamp = start
         let elapsed = sample.timestamp - start
-        samples.append(sample)
+        receivedCount += 1
+        if retainsSamples { samples.append(sample) }
         let requestedStop = sampleHandler?(sample, elapsed) ?? false
         if requestedStop || elapsed >= duration { finish(with: samples) }
     }
 
     private func finishAtDeadline() {
-        if samples.isEmpty { finish(throwing: RecordingError.noSamples) }
+        if receivedCount == 0 { finish(throwing: RecordingError.noSamples) }
         else { finish(with: samples) }
     }
 
@@ -128,6 +143,7 @@ final class WatchMotionRecorder {
         continuation?.resume(returning: result)
         continuation = nil
         samples = []
+        receivedCount = 0
         firstTimestamp = nil
         sampleHandler = nil
     }
@@ -139,6 +155,7 @@ final class WatchMotionRecorder {
         continuation?.resume(throwing: error)
         continuation = nil
         samples = []
+        receivedCount = 0
         firstTimestamp = nil
         sampleHandler = nil
     }

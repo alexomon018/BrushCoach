@@ -1,6 +1,6 @@
 import Foundation
 
-/// The pacer state machine: countdown, zone advance, pause, resume, and the two
+/// The session state machine: countdown, fixed-duration timing, pause, resume, and the two
 /// ways a session can end.
 ///
 /// This is deliberately a plain value type driven by explicit instants rather
@@ -54,8 +54,7 @@ public struct SessionCoordinator: Sendable {
     /// Something the host has to do that this type deliberately cannot: play a
     /// haptic, hold an extended runtime session, drive Core Motion.
     ///
-    /// These are intents, not device calls. Choosing *which* haptic expresses
-    /// "the zone changed" is a watchOS decision and stays in the watch layer.
+    /// These are intents, not device calls.
     public enum Effect: Equatable, Sendable {
         case beginExtendedRuntime
         case endExtendedRuntime
@@ -69,6 +68,8 @@ public struct SessionCoordinator: Sendable {
         case sessionStarted
         case sessionPaused
         case sessionResumed
+        /// Retained for source compatibility with older hosts. Free-brushing
+        /// sessions no longer emit zone-advance effects.
         case advancedToZone(index: Int)
         case finished(PacerOutcome)
         case failed(String)
@@ -109,6 +110,12 @@ public struct SessionCoordinator: Sendable {
 
     public var zoneSecondsRemaining: Int {
         timeline.snapshot(elapsed: elapsed).zoneSecondsRemaining
+    }
+
+    /// Whole seconds remaining in the single free-brushing session. Unlike the
+    /// legacy `zoneSecondsRemaining`, this never resets at 20-second boundaries.
+    public var sessionSecondsRemaining: Int {
+        Int(ceil(max(0, timeline.totalDuration - elapsed)))
     }
 
     /// The zone the pacer is prompting, as distinct from wherever a classifier
@@ -173,7 +180,6 @@ public struct SessionCoordinator: Sendable {
         var effects: [Effect] = []
         if snapshot.currentZoneIndex > currentZoneIndex {
             currentZoneIndex = snapshot.currentZoneIndex
-            effects.append(.advancedToZone(index: currentZoneIndex))
         }
         guard snapshot.isComplete else { return effects }
 
@@ -204,11 +210,11 @@ public struct SessionCoordinator: Sendable {
         return [.sessionResumed]
     }
 
-    /// Ends the session early, keeping credit for the zones already brushed.
+    /// Ends the session early, keeping its elapsed time.
     /// Discarding a nearly complete brush is the failure users resent most.
     ///
-    /// With no whole zone banked there is nothing honest to record, so this
-    /// behaves as a discard.
+    /// The legacy 20-second completion segments keep the existing minimum useful
+    /// early-session threshold without becoming zone guidance in the UI.
     public mutating func endEarly(at instant: Date) -> [Effect] {
         guard isBusy else { return [] }
         clock.stop(at: instant)

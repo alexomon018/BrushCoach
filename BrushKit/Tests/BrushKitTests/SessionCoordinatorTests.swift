@@ -62,7 +62,7 @@ struct SessionCoordinatorTests {
     // MARK: - Zones
 
     @Test
-    func eachZoneBoundaryIsAnnouncedExactlyOnce() {
+    func freeBrushingDoesNotAnnounceTwentySecondBoundaries() {
         var coordinator = brushingCoordinator()
         let brushingBegan = start.addingTimeInterval(3)
         var announced: [Int] = []
@@ -73,7 +73,19 @@ struct SessionCoordinatorTests {
                 if case .advancedToZone(let index) = effect { announced.append(index) }
             }
         }
-        #expect(announced == [1, 2, 3, 4, 5])
+        #expect(announced.isEmpty)
+        #expect(coordinator.currentZoneIndex == 5)
+    }
+
+    @Test
+    func overallCountdownNeverResetsAtLegacySegmentBoundaries() {
+        var coordinator = brushingCoordinator()
+        let brushingBegan = start.addingTimeInterval(3)
+
+        _ = coordinator.tick(at: brushingBegan.addingTimeInterval(19))
+        #expect(coordinator.sessionSecondsRemaining == 101)
+        _ = coordinator.tick(at: brushingBegan.addingTimeInterval(21))
+        #expect(coordinator.sessionSecondsRemaining == 99)
     }
 
     @Test
@@ -143,8 +155,8 @@ struct SessionCoordinatorTests {
         #expect(coordinator.phase == .countdown(3))
     }
 
-    /// A session paused across a zone boundary must resume in the zone the clock
-    /// says it is in, not the one it was in when it paused.
+    /// The internal compatibility segment may advance across a pause, but free
+    /// brushing must not emit a user-facing zone-change effect.
     @Test
     func resumingAfterAZoneBoundaryLandsInTheRightZone() {
         var coordinator = brushingCoordinator()
@@ -156,7 +168,7 @@ struct SessionCoordinatorTests {
 
         _ = coordinator.resume(at: brushingBegan.addingTimeInterval(600))
         let effects = coordinator.tick(at: brushingBegan.addingTimeInterval(602))
-        #expect(effects == [.advancedToZone(index: 1)])
+        #expect(effects.isEmpty)
         #expect(coordinator.currentZoneIndex == 1)
     }
 

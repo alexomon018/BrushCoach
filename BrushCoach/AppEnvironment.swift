@@ -71,7 +71,54 @@ final class AppEnvironment {
 
     func activate() {
         watchLink.activate()
+
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-demoSession") {
+            UserDefaults.standard.set(true, forKey: "hasSeenConsumerOnboarding")
+            sessions.upsert(Self.demoSession(), writeHealth: false)
+        }
+        #endif
     }
+
+    #if DEBUG
+    /// A simulator-only result that exercises every state of the mouth map.
+    /// Launching with `-demoSession` makes design review possible without
+    /// pretending Core Motion is available in Simulator or altering release
+    /// behavior. A stable ID means repeated launches update one demo record
+    /// instead of filling History with fixtures.
+    private static func demoSession(now: Date = .now) -> BrushSession {
+        let duration: TimeInterval = ZoneCoverageStandard.sessionDuration
+        return BrushSession(
+            id: UUID(uuidString: "B7A4C18C-3C7E-4C52-97E7-93A6D87ED3E1")!,
+            startedAt: now.addingTimeInterval(-duration),
+            endedAt: now,
+            duration: duration,
+            zonesCompleted: 6,
+            plannedZones: 6,
+            analysis: SessionAnalysis(
+                activeBrushingSeconds: 108,
+                fastStrokeSeconds: 4,
+                positionChanges: 8,
+                longestSinglePositionSeconds: 24,
+                medianStrokeRatePerMinute: 156,
+                windowCount: 119,
+                confidentZoneWindows: 100,
+                zoneEstimationAttempted: true,
+                zoneDurations: ZoneDurations(
+                    upperLeft: 23,
+                    upperCentre: 20,
+                    upperRight: 11,
+                    lowerLeft: 18,
+                    lowerCentre: 7,
+                    lowerRight: 21
+                ),
+                coveredSeconds: duration,
+                recordingCompleted: true
+            ),
+            source: .watch
+        )
+    }
+    #endif
 }
 
 /// A one-slot holder so the two stores can be handed references to each other

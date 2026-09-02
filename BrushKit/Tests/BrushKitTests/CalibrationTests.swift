@@ -127,6 +127,20 @@ struct LiveZoneEstimationTests {
         #expect((analysis.zoneAgreement ?? 0) > 0.5)
     }
 
+    @Test func freeBrushingAccumulatesZoneTimeWithoutAPrompt() throws {
+        let profile = try trainedProfile()
+        var analyzer = LiveSessionAnalyzer(profile: profile)
+
+        _ = analyzer.ingest(
+            CalibrationFixture.zoneMotion(index: 0, seconds: 14, from: 0)
+        )
+
+        let analysis = analyzer.currentAnalysis
+        #expect(analysis.confidentZoneWindows > 0)
+        #expect(analysis.zoneDurations.total > 0)
+        #expect(analysis.zoneAgreement == nil)
+    }
+
     /// Agreement must never be inferred from the prompt. Feeding one zone's
     /// motion while prompting a different zone has to lower agreement.
     @Test func agreementFallsWhenMotionDoesNotMatchThePrompt() throws {
@@ -192,6 +206,36 @@ struct LiveZoneEstimationTests {
         #expect(analyzer.currentZone == nil)
         #expect(analyzer.currentAnalysis.confidentZoneWindows == 0)
         #expect(analyzer.currentAnalysis.zoneAgreement == nil)
+    }
+}
+
+@Suite("Zone dwell aggregation")
+struct ZoneDwellAggregationTests {
+    @Test func aSingleFlashIsNotCounted() {
+        var accumulator = ZoneDwellAccumulator(minimumConsecutiveWindows: 2)
+        accumulator.ingest(zone: .upperLeft, elapsed: 1)
+        accumulator.ingest(zone: .upperRight, elapsed: 1)
+
+        #expect(accumulator.durations.total == 0)
+    }
+
+    @Test func aConfirmedDwellBackfillsItsBufferedTime() {
+        var accumulator = ZoneDwellAccumulator(minimumConsecutiveWindows: 2)
+        accumulator.ingest(zone: .lowerCentre, elapsed: 2)
+        accumulator.ingest(zone: .lowerCentre, elapsed: 1)
+        accumulator.ingest(zone: .lowerCentre, elapsed: 1)
+
+        #expect(accumulator.durations.lowerCentre == 4)
+    }
+
+    @Test func uncertaintyBreaksADwellInsteadOfExtendingTheOldZone() {
+        var accumulator = ZoneDwellAccumulator(minimumConsecutiveWindows: 2)
+        accumulator.ingest(zone: .upperCentre, elapsed: 1)
+        accumulator.ingest(zone: .upperCentre, elapsed: 1)
+        accumulator.interrupt()
+        accumulator.ingest(zone: .upperCentre, elapsed: 1)
+
+        #expect(accumulator.durations.upperCentre == 2)
     }
 }
 

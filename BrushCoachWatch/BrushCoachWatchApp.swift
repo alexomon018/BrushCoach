@@ -123,14 +123,14 @@ private struct WatchOnboardingView: View {
         VStack(spacing: compact ? 5 : 8) {
             OnboardingZoneRail()
                 .frame(height: 42)
-            Text("Two-minute guide")
+            Text("Two minutes, your way")
                 .font(.watchScreenTitle)
                 .multilineTextAlignment(.center)
-            Text("A tap every 20 seconds moves to the next zone.")
+            Text("Brush freely. After calibration, six mouth areas are tracked automatically.")
                 .font(.system(size: compact ? 9 : 10))
                 .foregroundStyle(.white.opacity(0.64))
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

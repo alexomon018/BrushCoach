@@ -23,6 +23,14 @@ public enum BrushZoneLabel: String, Codable, CaseIterable, Identifiable, Sendabl
 
     public var id: String { rawValue }
 
+    /// The six regions the calibrated classifier can actually distinguish.
+    /// `allCases` also contains capture-only labels (`transition` and `idle`),
+    /// which must never appear as teeth on a coverage map.
+    public static let mouthZones: [Self] = [
+        .upperLeft, .upperCentre, .upperRight,
+        .lowerLeft, .lowerCentre, .lowerRight
+    ]
+
     public var displayName: String {
         switch self {
         case .upperLeft: "Upper left"

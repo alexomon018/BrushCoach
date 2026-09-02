@@ -4,6 +4,7 @@ import SwiftUI
 struct RecordingView: View {
     @State private var model = RecordingViewModel()
     @AppStorage("recordingWatchWrist") private var watchWrist = WatchWrist.left.rawValue
+    @AppStorage("recordingDurationSeconds") private var durationSeconds = Int(RecordingViewModel.defaultDuration)
 
     var body: some View {
         ScrollView {
@@ -13,7 +14,9 @@ struct RecordingView: View {
                     .watchPanel()
                 controls
             }
-            .watchPageFrame()
+            // The wrist and length rows sit at the very bottom of the scroll, so
+            // the page needs more clearance than the default before the bezel.
+            .watchPageFrame(bottom: 16)
         }
         .background(Color.captureInk.ignoresSafeArea())
         .navigationTitle("Capture")
@@ -35,13 +38,17 @@ struct RecordingView: View {
     private var captureDisplay: some View {
         switch model.phase {
         case .idle:
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ZoneGlyph(label: model.selectedLabel)
-                    .frame(height: 54)
+                    .frame(height: 40)
                 Text(model.selectedLabel.displayName)
-                    .font(.system(.title3, design: .rounded, weight: .bold))
+                    .font(.system(.headline, design: .rounded, weight: .bold))
                     .foregroundStyle(Color.enamel)
-                Text("10 seconds · 50 Hz request")
+                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+                // Kept to one line: the spelled-out version wrapped mid-unit
+                // ("50 / Hz request") inside the panel.
+                Text("\(durationSeconds)s · 50 Hz")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -62,12 +69,12 @@ struct RecordingView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(model.elapsed.formatted(.number.precision(.fractionLength(1))))
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text("/ 10s")
+                    Text("/ \(Int(model.duration))s")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
                 .foregroundStyle(Color.enamel)
-                ProgressView(value: model.elapsed, total: 10)
+                ProgressView(value: model.elapsed, total: model.duration)
                     .tint(Color.recordCoral)
             }
         case .saved(let count):
@@ -96,8 +103,15 @@ struct RecordingView: View {
     }
 
     private var controls: some View {
-        VStack(spacing: 8) {
-            if !model.isBusy {
+        VStack(spacing: WatchMetrics.componentSpacing) {
+            if model.isBusy {
+                Button(role: .destructive) {
+                    model.cancel()
+                } label: {
+                    Label("Cancel", systemImage: "xmark")
+                }
+                .watchSecondaryControl(tint: .recordCoral)
+            } else {
                 NavigationLink {
                     LabelPicker(selection: $model.selectedLabel)
                 } label: {
@@ -106,27 +120,37 @@ struct RecordingView: View {
                 .watchSecondaryControl(tint: .captureBlue)
 
                 Button {
-                    model.begin(watchWrist: WatchWrist(rawValue: watchWrist))
+                    model.begin(
+                        duration: TimeInterval(durationSeconds),
+                        watchWrist: WatchWrist(rawValue: watchWrist)
+                    )
                 } label: {
-                    Label(model.canRecordAgain ? "Record again" : "Record 10 seconds", systemImage: "record.circle")
-                        .frame(maxWidth: .infinity)
+                    Label(
+                        model.canRecordAgain ? "Record again" : "Record \(durationSeconds) seconds",
+                        systemImage: "record.circle"
+                    )
+                    .frame(maxWidth: .infinity)
                 }
                 .watchPrimaryControl(tint: .recordCoral)
+
+                // Both settings push their own list. The inline wheel style ran
+                // off the bottom of the scroll view and overlapped the controls
+                // above it.
+                Picker("Capture length", selection: $durationSeconds) {
+                    ForEach(RecordingViewModel.durationOptions, id: \.self) { seconds in
+                        Text("\(seconds) seconds").tag(seconds)
+                    }
+                }
+                .pickerStyle(.navigationLink)
 
                 Picker("Watch wrist", selection: $watchWrist) {
                     Text("Left wrist").tag(WatchWrist.left.rawValue)
                     Text("Right wrist").tag(WatchWrist.right.rawValue)
                 }
-                .font(.caption)
-            } else {
-                Button(role: .destructive) {
-                    model.cancel()
-                } label: {
-                    Label("Cancel", systemImage: "xmark")
-                }
-                .watchSecondaryControl(tint: .recordCoral)
+                .pickerStyle(.navigationLink)
             }
         }
+        .tint(Color.captureBlue)
     }
 }
 
@@ -163,7 +187,7 @@ private struct ZoneGlyph: View {
             ForEach(0..<6, id: \.self) { index in
                 Capsule()
                     .fill(index == selectedIndex ? Color.captureBlue : Color.enamel.opacity(0.13))
-                    .frame(width: index == selectedIndex ? 19 : 12, height: index == selectedIndex ? 43 : 31)
+                    .frame(width: index == selectedIndex ? 16 : 10, height: index == selectedIndex ? 34 : 25)
                     .rotationEffect(.degrees(Double(index - 2) * 7))
             }
         }
