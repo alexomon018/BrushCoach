@@ -32,15 +32,16 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
     /// reinterpret a brush after the user travels to another timezone.
     public var timeZoneIdentifier: String
     public var duration: TimeInterval
-    /// Zones the pacer advanced through. This is what "completed a two-minute
-    /// brush" means, and it is never withheld because motion analysis failed.
+    /// Legacy 20-second completion segments. New free-brushing sessions still
+    /// fill all six only when the fixed timer reaches the end; these are not
+    /// classifier observations and are never shown as mouth coverage.
     public var zonesCompleted: Int
 
-    /// How many zones the plan called for. Stored per session so that changing
-    /// the plan later cannot retroactively misreport old sessions.
+    /// Legacy completion-segment count retained for stored-session compatibility.
     public var plannedZones: Int
 
-    /// Zones confirmed by motion analysis, or `nil` when no verification ran.
+    /// Legacy aggregate verification count, or `nil` when no verification ran.
+    /// New sessions use `analysis.zoneDurations` for region-level results.
     /// Deliberately distinct from `0`, which means verification ran and confirmed
     /// nothing. Never used to gate routine credit.
     public var verifiedZones: Int?
@@ -151,7 +152,7 @@ public struct BrushSession: Codable, Identifiable, Hashable, Sendable {
         day.period(for: startedAt, calendar: calendar)
     }
 
-    /// Whether this counts as a finished routine. Depends only on the pacer.
+    /// Whether this counts as a finished routine. Depends only on timer facts.
     public var completedRoutine: Bool { duration >= 110 && zonesCompleted >= plannedZones }
 
     /// True when motion analysis ran and confirmed every planned zone.

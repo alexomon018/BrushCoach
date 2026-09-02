@@ -177,6 +177,14 @@ private final class StoredBrushSession {
     var confidentZoneWindows: Int
     var zoneAgreement: Double?
     var zoneEstimationAttempted: Bool
+    // Stored separately so a later trends UI can query a region without
+    // decoding an opaque analysis blob.
+    var upperLeftZoneSeconds: TimeInterval = 0
+    var upperCentreZoneSeconds: TimeInterval = 0
+    var upperRightZoneSeconds: TimeInterval = 0
+    var lowerLeftZoneSeconds: TimeInterval = 0
+    var lowerCentreZoneSeconds: TimeInterval = 0
+    var lowerRightZoneSeconds: TimeInterval = 0
     var coveredSeconds: TimeInterval
     var recordingCompleted: Bool
 
@@ -210,6 +218,12 @@ private final class StoredBrushSession {
         confidentZoneWindows = analysis?.confidentZoneWindows ?? 0
         zoneAgreement = analysis?.zoneAgreement
         zoneEstimationAttempted = analysis?.zoneEstimationAttempted ?? false
+        upperLeftZoneSeconds = analysis?.zoneDurations.upperLeft ?? 0
+        upperCentreZoneSeconds = analysis?.zoneDurations.upperCentre ?? 0
+        upperRightZoneSeconds = analysis?.zoneDurations.upperRight ?? 0
+        lowerLeftZoneSeconds = analysis?.zoneDurations.lowerLeft ?? 0
+        lowerCentreZoneSeconds = analysis?.zoneDurations.lowerCentre ?? 0
+        lowerRightZoneSeconds = analysis?.zoneDurations.lowerRight ?? 0
         coveredSeconds = analysis?.coveredSeconds ?? 0
         recordingCompleted = analysis?.recordingCompleted ?? true
 
@@ -245,6 +259,12 @@ private final class StoredBrushSession {
         confidentZoneWindows = analysis?.confidentZoneWindows ?? 0
         zoneAgreement = analysis?.zoneAgreement
         zoneEstimationAttempted = analysis?.zoneEstimationAttempted ?? false
+        upperLeftZoneSeconds = analysis?.zoneDurations.upperLeft ?? 0
+        upperCentreZoneSeconds = analysis?.zoneDurations.upperCentre ?? 0
+        upperRightZoneSeconds = analysis?.zoneDurations.upperRight ?? 0
+        lowerLeftZoneSeconds = analysis?.zoneDurations.lowerLeft ?? 0
+        lowerCentreZoneSeconds = analysis?.zoneDurations.lowerCentre ?? 0
+        lowerRightZoneSeconds = analysis?.zoneDurations.lowerRight ?? 0
         coveredSeconds = analysis?.coveredSeconds ?? 0
         recordingCompleted = analysis?.recordingCompleted ?? true
         self.updatedAt = updatedAt
@@ -262,6 +282,14 @@ private final class StoredBrushSession {
             confidentZoneWindows: confidentZoneWindows,
             zoneAgreement: zoneAgreement,
             zoneEstimationAttempted: zoneEstimationAttempted,
+            zoneDurations: ZoneDurations(
+                upperLeft: upperLeftZoneSeconds,
+                upperCentre: upperCentreZoneSeconds,
+                upperRight: upperRightZoneSeconds,
+                lowerLeft: lowerLeftZoneSeconds,
+                lowerCentre: lowerCentreZoneSeconds,
+                lowerRight: lowerRightZoneSeconds
+            ),
             coveredSeconds: coveredSeconds,
             recordingCompleted: recordingCompleted
         ) : nil

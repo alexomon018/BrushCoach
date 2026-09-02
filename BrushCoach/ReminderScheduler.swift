@@ -81,7 +81,7 @@ actor ReminderScheduler {
 
         let content = UNMutableNotificationContent()
         content.title = period == .morning ? "Start fresh" : "Close the day clean"
-        content.body = "Two minutes, six zones. Your routine is ready."
+        content.body = "Two minutes of free brushing. Your Watch is ready."
         content.sound = .default
         content.userInfo = ["route": "start"]
 

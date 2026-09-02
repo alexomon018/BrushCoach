@@ -163,6 +163,45 @@ struct BrushSessionTests {
         #expect(sessions[0].completedRoutine)
     }
 
+    @Test func coverageFlagsOnlyRegionsBelowSixteenSeconds() {
+        let analysis = SessionAnalysis(
+            windowCount: 100,
+            zoneEstimationAttempted: true,
+            zoneDurations: ZoneDurations(
+                upperLeft: 15,
+                upperCentre: 16,
+                upperRight: 20,
+                lowerLeft: 21,
+                lowerCentre: 19,
+                lowerRight: 20
+            ),
+            coveredSeconds: 119
+        )
+
+        #expect(analysis.hasUsableZoneCoverage(forSessionLasting: 120))
+        #expect(analysis.underBrushedZones == [.upperLeft])
+    }
+
+    @Test func sparseZoneCoverageDoesNotCreateSixFalseDangerAreas() {
+        let analysis = SessionAnalysis(
+            windowCount: 100,
+            zoneEstimationAttempted: true,
+            zoneDurations: ZoneDurations(upperLeft: 12, upperCentre: 10),
+            coveredSeconds: 119
+        )
+
+        #expect(!analysis.hasUsableZoneCoverage(forSessionLasting: 120))
+    }
+
+    @Test func analysisWrittenBeforeZoneDurationsDecodesAsNoCoverage() throws {
+        let legacy = #"{"activeBrushingSeconds":100,"fastStrokeSeconds":0,"positionChanges":4,"longestSinglePositionSeconds":20,"medianStrokeRatePerMinute":170,"windowCount":100,"confidentZoneWindows":70,"zoneAgreement":0.8,"zoneEstimationAttempted":true,"coveredSeconds":119,"recordingCompleted":true}"#
+
+        let analysis = try JSONDecoder().decode(SessionAnalysis.self, from: Data(legacy.utf8))
+
+        #expect(analysis.zoneDurations == ZoneDurations())
+        #expect(!analysis.hasUsableZoneCoverage(forSessionLasting: 120))
+    }
+
     @Test func decodesPreferencesWrittenBeforeDayEndExisted() throws {
         let legacy = #"{"morningEnabled":true,"morningHour":6,"morningMinute":45,"eveningEnabled":false,"eveningHour":22,"eveningMinute":15,"flossPromptEnabled":false,"tonguePromptEnabled":true}"#
 

@@ -128,10 +128,13 @@ extension View {
 struct TactileCardButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The press reads through scale alone. `brightness` is a colour filter over
+    /// the whole label, so on a card carrying the mouth map it re-rasterised that
+    /// entire tree for every frame of the press — a heavy price for a 0.018 shift
+    /// nobody can see.
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
-            .brightness(configuration.isPressed ? -0.018 : 0)
             .animation(.snappy(duration: 0.18, extraBounce: 0.08), value: configuration.isPressed)
     }
 }

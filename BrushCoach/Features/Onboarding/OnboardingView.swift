@@ -19,30 +19,12 @@ struct OnboardingView: View {
     private static let pages: [OnboardingPage] = [
         OnboardingPage(
             kind: .message,
-            icon: "timer",
-            eyebrow: "THE ROUTINE",
-            title: "Two minutes. Twice daily.",
-            body: "Six zones keep the full mouth moving, with a clear haptic every 20 seconds.",
+            icon: "mouth.fill",
+            eyebrow: "BRUSH FREELY",
+            title: "Two minutes. Your way.",
+            body: "Brush in any order. After a quick calibration, the Watch tracks six broad mouth areas and sends your coverage map here.",
             mood: .ready,
             action: .idle
-        ),
-        OnboardingPage(
-            kind: .message,
-            icon: "angle",
-            eyebrow: "THE TECHNIQUE",
-            title: "Meet the gumline gently.",
-            body: "Use fluoride toothpaste and a soft-bristled brush. Hold it around 45° and move in short, gentle strokes.",
-            mood: .cheery,
-            action: .brushing
-        ),
-        OnboardingPage(
-            kind: .message,
-            icon: "applewatch",
-            eyebrow: "THE COACH",
-            title: "Lower your wrist. Keep brushing.",
-            body: "The Watch session follows real elapsed time, even when the display sleeps. Your history stays local and can be written to Apple Health.",
-            mood: .proud,
-            action: .protection
         ),
         OnboardingPage(
             kind: .handedness,
@@ -137,7 +119,7 @@ struct OnboardingView: View {
     }
 
     /// The way past a step without answering it. Both steps that have one are
-    /// recoverable from the Routine tab, so neither is worth a dead end here.
+    /// recoverable from Settings, so neither is worth a dead end here.
     private var secondaryTitle: String? {
         switch current.kind {
         case .handedness: "Set this later"

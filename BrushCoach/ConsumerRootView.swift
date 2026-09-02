@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct ConsumerRootView: View {
-    enum AppTab: Hashable { case today, history, routine, more }
+    enum AppTab: Hashable { case brush, history, settings }
 
     @AppStorage("hasSeenConsumerOnboarding") private var hasSeenOnboarding = false
     @State private var sessions: SessionStore
     @State private var routine: RoutineSettings
-    @State private var selectedTab = AppTab.today
+    @State private var selectedTab = AppTab.brush
 
     init(sessions: SessionStore, settings: RoutineSettings) {
         _sessions = State(initialValue: sessions)
@@ -26,22 +26,15 @@ struct ConsumerRootView: View {
 
     private var tabs: some View {
         TabView(selection: $selectedTab) {
-            // `isVisible` stops the mascot's looping animations while another tab
-            // is showing. A TabView keeps every tab's views alive, so without this
-            // the mascot holds the render loop open and every other screen scrolls
-            // against a frame budget it has already spent.
-            TodayView(store: sessions, isVisible: selectedTab == .today)
-                .tabItem { Label("Today", systemImage: selectedTab == .today ? "sun.max.fill" : "sun.max") }
-                .tag(AppTab.today)
+            TodayView(store: sessions, isVisible: selectedTab == .brush)
+                .tabItem { Label("Brush", systemImage: selectedTab == .brush ? "mouth.fill" : "mouth") }
+                .tag(AppTab.brush)
             HistoryView(store: sessions)
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
                 .tag(AppTab.history)
             RoutineView(store: sessions, settings: routine)
-                .tabItem { Label("Routine", systemImage: selectedTab == .routine ? "bell.badge.fill" : "bell.badge") }
-                .tag(AppTab.routine)
-            MoreView()
-                .tabItem { Label("More", systemImage: selectedTab == .more ? "ellipsis.circle.fill" : "ellipsis.circle") }
-                .tag(AppTab.more)
+                .tabItem { Label("Settings", systemImage: selectedTab == .settings ? "gearshape.fill" : "gearshape") }
+                .tag(AppTab.settings)
         }
         .tint(Color.rinseBlue)
         .sensoryFeedback(.selection, trigger: selectedTab)

@@ -1,15 +1,16 @@
 # BrushCoach — personal Apple Watch brushing coach
 
 BrushCoach is an Apple Watch–first toothbrushing coach with an iPhone companion. The shipping
-experience is a reliable two-minute, six-zone guided routine. Motion analysis runs alongside it and
-reports what it observed — without ever deciding whether the session counted.
+experience is a fixed two-minute free-brushing session. After personal calibration, motion analysis
+passively estimates six broad mouth regions and sends a per-region coverage result to the phone —
+without ever deciding whether the session counted.
 
 ## Status
 
 | Area | State |
 | --- | --- |
-| Two-minute six-zone Watch pacer | Wired and working |
-| iPhone companion, history, reminders, Health writing | Wired and working |
+| Two-minute free-brushing Watch timer | Wired and working |
+| Six-region iPhone mouth map, danger feedback, history, reminders, Health writing | Wired and working |
 | Watch complication | Wired and working |
 | Handedness fork and honest capability reporting | Wired and working |
 | Real brushing time, stroke rate, position change | **Wired, thresholds unvalidated** |
@@ -30,8 +31,8 @@ Two caveats stated plainly, because the difference matters:
 
 ## What works today
 
-- A wall-clock-based two-minute Watch session with six 20-second zones, wrist-down extended runtime
-  under the `self-care` background mode, and a transition haptic at each zone change.
+- A wall-clock-based two-minute Watch session with one overall countdown, wrist-down extended runtime
+  under the `self-care` background mode, and no prescribed zone order or transition haptics.
 - Pause, resume, and an end-early path that keeps credit for the zones already brushed.
 - A WidgetKit Watch complication in circular, corner, inline, and rectangular families that opens
   directly into a session.
@@ -95,17 +96,17 @@ Three things keep this honest:
   fires teaches its author nothing.
 - **Smoothed confidence reflects real uncertainty.** `PredictionSmoother` multiplies vote share by the
   winning windows' own confidence. Vote share alone would call three unanimous coin-flips a certainty.
-- **"Prompt agreement", not accuracy.** The summary reports how often confident estimates matched the
-  prompted zone. It cannot separate "you followed the prompt" from "the classifier agrees", and is
-  named accordingly. `SessionAnalysis.zoneEstimationAttempted` distinguishes "not calibrated" from
-  "calibrated but never confident", so a silent session can be diagnosed.
+- **Noise-resistant aggregation.** Estimates are confidence-weighted across three overlapping windows,
+  and a new zone must persist for two consecutive one-second hops before its buffered time counts.
+  Low-confidence time remains unassigned rather than being guessed. `SessionAnalysis.zoneEstimationAttempted`
+  distinguishes "not calibrated" from "calibrated but never confident".
 
 The calibration screen reports a separation score. High means the six captures looked distinct from
 each other — a precondition for estimates working, not evidence that they will.
 
 ## What motion analysis claims, and what it does not
 
-`LiveSessionAnalyzer` runs beside the pacer, never driving it. The pacer stays pure wall-clock, so a
+`LiveSessionAnalyzer` runs beside the timer, never driving it. The timer stays pure wall-clock, so a
 sensing failure cannot slow the session, stop it, or desynchronise the timer — it only means the
 summary has less to say.
 
@@ -125,12 +126,26 @@ What it reports:
 
 What it never does:
 
-- Decide whether the session counted. `BrushSession.completedRoutine` depends only on the pacer.
+- Decide whether the session counted. `BrushSession.completedRoutine` depends only on elapsed session time.
 - Report an inconclusive reading as zero. `SessionAnalysis.isInconclusive` and the `nil` case of
   `BrushSession.activeBrushingSeconds` exist so the summary can say "couldn't check" rather than
   "you didn't brush".
-- Name a mouth zone with any confidence it does not have. Zone estimates appear only above the
-  threshold, only when calibrated, and always labelled experimental.
+- Name a mouth zone with any confidence it does not have. Zone estimates contribute only above the
+  threshold and only when calibrated; otherwise the coverage result is explicitly incomplete.
+
+## Coverage results
+
+The classifier and phone map use the same six regions: upper/lower × left/centre/right. The app does
+not claim to distinguish inner, outer, or chewing surfaces within one region. Each region has an equal
+20-second share of the fixed 120-second session. A region is flagged as a danger area below 16 seconds
+(80% of target). Danger feedback is withheld unless at least 72 seconds were confidently mapped and the
+motion recording covered the session; an incomplete reading is reported as incomplete, not as six
+neglected regions.
+
+The iPhone app has three destinations: **Brush** for the latest mouth map and Watch handoff,
+**History** for durable session results, and **Settings** for reminders, after-brush prompts, handedness,
+and optional connections. Per-zone seconds are stored as separate local database fields so a later
+trend UI can query them without retaining raw IMU samples.
 
 ## Repository layout
 

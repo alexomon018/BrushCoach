@@ -3,7 +3,7 @@ import SwiftUI
 
 struct TodayView: View {
     @Bindable var store: SessionStore
-    /// False while another tab is showing, so the mascot's looping animations stop.
+    /// Kept in the root contract so older tab-state restoration remains stable.
     let isVisible: Bool
 
     @State private var launchState = WatchLaunchState.idle
@@ -12,136 +12,61 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CompanionMetrics.componentSpacing) {
+                    pageHeader
+
                     if let message = store.lastError {
                         StorageNotice(
                             message: message,
                             isDegradedRatherThanFailed: store.isUsingFallbackStorage
                         )
                     }
-                    hero
-                    routineCard
-                    techniqueCard
+
+                    if let latestSession {
+                        NavigationLink {
+                            SessionResultDetailView(session: latestSession)
+                        } label: {
+                            SessionResultCard(session: latestSession, presentation: .summary)
+                        }
+                        .buttonStyle(TactileCardButtonStyle())
+                        .accessibilityHint("Shows the full coverage breakdown.")
+                    } else {
+                        EmptyResultCard()
+                    }
+
+                    WatchLaunchButton(state: launchState, action: beginWatchHandoff)
+
+                    CompanionSectionHeader(
+                        title: "TODAY",
+                        detail: "Two brushes complete your daily routine."
+                    )
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: CompanionMetrics.componentSpacing) {
+                            PeriodStatusCard(period: .morning, session: store.today.morning)
+                            PeriodStatusCard(period: .evening, session: store.today.evening)
+                        }
+                        VStack(spacing: CompanionMetrics.componentSpacing) {
+                            PeriodStatusCard(period: .morning, session: store.today.morning)
+                            PeriodStatusCard(period: .evening, session: store.today.evening)
+                        }
+                    }
                 }
                 .companionPageFrame()
             }
             .background(Color.enamelWash.ignoresSafeArea())
-            // The hero card already carries the date, the greeting and the
-            // brand. A bar repeating the app name above it is chrome that only
-            // costs vertical room and draws a hairline across the card.
             .toolbar(.hidden, for: .navigationBar)
         }
     }
 
-    private var hero: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(today, format: .dateTime.weekday(.wide).month(.wide).day())
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.rinseBlue)
-                        .textCase(.uppercase)
-                    Text(greeting)
-                        .font(.companionHero)
-                        .foregroundStyle(Color.deepInk)
-                    Text(dayStatus)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                VStack(spacing: 5) {
-                    ToothMascotView(mood: mascotMood, action: mascotAction, isOnScreen: isVisible)
-                        .frame(width: 76, height: 78)
-                    Text("\(store.streak) DAY STREAK")
-                        .font(.system(size: 8, weight: .bold))
-                        .tracking(0.65)
-                        .foregroundStyle(Color.deepInk.opacity(0.7))
-                }
-            }
+    private var latestSession: BrushSession? { store.sessions.first }
 
-            DentalArchView(completedZones: store.today.completedCount * 3)
-                .frame(height: 100)
-
-            WatchLaunchButton(state: launchState, action: beginWatchHandoff)
-
-            if launchState == .unavailable {
-                Label("Open BrushCoach on your Watch, or use its complication.", systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .companionCard(.feature)
-    }
-
-    private var routineCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CompanionSectionHeader(title: "TODAY'S ROUTINE", detail: "Two brushes complete your daily rhythm.")
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: CompanionMetrics.componentSpacing) {
-                    PeriodStatusCard(period: .morning, session: store.today.morning)
-                    PeriodStatusCard(period: .evening, session: store.today.evening)
-                }
-                VStack(spacing: CompanionMetrics.componentSpacing) {
-                    PeriodStatusCard(period: .morning, session: store.today.morning)
-                    PeriodStatusCard(period: .evening, session: store.today.evening)
-                }
-            }
-        }
-    }
-
-    private var techniqueCard: some View {
-        HStack(spacing: CompanionMetrics.rowSpacing) {
-            Image(systemName: "angle")
-                .font(.title2.weight(.semibold))
+    private var pageHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Your latest brush")
+                .font(.companionHero)
                 .foregroundStyle(Color.deepInk)
-                .frame(width: CompanionMetrics.rowIconSize, height: CompanionMetrics.rowIconSize)
-                .background(Color.mintFresh.opacity(0.65), in: Circle())
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Aim for the gumline")
-                    .font(.headline)
-                Text("Hold a soft-bristled brush around 45° and use gentle, short strokes.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            Spacer(minLength: 0)
+            StreakPill(days: store.streak)
         }
-        .companionCard()
-    }
-
-    /// Read once per body evaluation so the greeting, date and mascot mood all
-    /// agree, and so `body` stays a pure function of its inputs.
-    private var today: Date { store.today.date }
-
-    private var hour: Int { Calendar.current.component(.hour, from: .now) }
-
-    private var greeting: String {
-        switch hour {
-        case 0..<12: "Good morning"
-        case 12..<18: "Good afternoon"
-        default: "Good evening"
-        }
-    }
-
-    private var dayStatus: String {
-        switch store.today.completedCount {
-        case 0: "Two small minutes to start fresh."
-        case 1: "One brush tucked away. One to go."
-        default: "Both brushes done. Nicely played."
-        }
-    }
-
-    private var mascotMood: ToothMood {
-        switch store.today.completedCount {
-        case 0: .ready
-        case 1: .cheery
-        default: .proud
-        }
-    }
-
-    private var mascotAction: ToothAction {
-        if store.today.completedCount == 2 { return .success }
-        if hour >= 18 { return .bedtime }
-        return .idle
     }
 
     private func beginWatchHandoff() {
@@ -161,6 +86,58 @@ struct TodayView: View {
     }
 }
 
+/// The streak as one glanceable object rather than a number stacked on a caption.
+/// Zero still shows, muted: the moment the mechanic most needs starting is the
+/// wrong moment for it to disappear.
+private struct StreakPill: View {
+    let days: Int
+
+    private var isActive: Bool { days > 0 }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isActive ? Color.coachCoral : Color.deepInk.opacity(0.42))
+            Text(days.formatted())
+                .font(.system(size: 17, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(isActive ? Color.deepInk : Color.deepInk.opacity(0.45))
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 34)
+        .background(
+            isActive ? Color.achievementGold.opacity(0.18) : Color.deepInk.opacity(0.05),
+            in: Capsule()
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(days == 1 ? "1 day streak" : "\(days) day streak")
+    }
+}
+
+private struct EmptyResultCard: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "mouth.fill")
+                .font(.system(size: 42, weight: .medium))
+                .foregroundStyle(Color.rinseBlue)
+                .frame(width: 82, height: 82)
+                .background(Color.rinseBlue.opacity(0.1), in: Circle())
+            VStack(spacing: 5) {
+                Text("Your mouth map starts here")
+                    .font(.companionFeatureTitle)
+                    .foregroundStyle(Color.deepInk)
+                    .multilineTextAlignment(.center)
+                Text("Finish a two-minute Watch session to see which areas got enough attention.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .companionCard(.feature)
+    }
+}
+
 enum WatchLaunchState: Equatable {
     case idle, connecting, sent, unavailable
 }
@@ -170,29 +147,38 @@ private struct WatchLaunchButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: icon)
-                    .contentTransition(.symbolEffect(.replace))
-                Text(title)
-                    .contentTransition(.interpolate)
-                Spacer()
-                trailing
+        VStack(spacing: 8) {
+            Button(action: action) {
+                HStack {
+                    Image(systemName: icon)
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(title)
+                        .contentTransition(.interpolate)
+                    Spacer()
+                    trailing
+                }
+                .font(.headline)
+                .padding(.horizontal, 18)
+                .frame(height: CompanionMetrics.controlHeight)
+                .foregroundStyle(.white)
+                .background(backgroundColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
-            .font(.headline)
-            .padding(.horizontal, 18)
-            .frame(height: CompanionMetrics.controlHeight)
-            .foregroundStyle(.white)
-            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .disabled(state != .idle)
-        .sensoryFeedback(trigger: state) { _, newValue in
-            switch newValue {
-            case .connecting: .impact(weight: .medium)
-            case .sent: .success
-            case .unavailable: .error
-            case .idle: nil
+            .buttonStyle(.plain)
+            .disabled(state != .idle)
+            .sensoryFeedback(trigger: state) { _, newValue in
+                switch newValue {
+                case .connecting: .impact(weight: .medium)
+                case .sent: .success
+                case .unavailable: .error
+                case .idle: nil
+                }
+            }
+
+            if state == .unavailable {
+                Label("Open BrushCoach on your Watch, or use its complication.", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
     }
@@ -240,19 +226,24 @@ private struct PeriodStatusCard: View {
     let session: BrushSession?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack {
-                Image(systemName: period == .morning ? "sun.max.fill" : "moon.stars.fill")
-                Spacer()
-                Image(systemName: session == nil ? "circle" : "checkmark.circle.fill")
-                    .foregroundStyle(session == nil ? Color.secondary : Color.mintDeep)
+        HStack(spacing: 12) {
+            Image(systemName: period == .morning ? "sun.max.fill" : "moon.stars.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(period == .morning ? Color.rinseBlue : Color.sketchLavender)
+                .frame(width: 38, height: 38)
+                .background(
+                    (period == .morning ? Color.rinseBlue : Color.sketchLavender).opacity(0.1),
+                    in: Circle()
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(period.displayName).font(.headline)
+                Text(session.map { Duration.seconds($0.duration).formatted(.time(pattern: .minuteSecond)) } ?? "Not yet")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
-            .foregroundStyle(Color.deepInk)
-            Text(period.displayName)
-                .font(.headline)
-            Text(session.map { Duration.seconds($0.duration).formatted(.time(pattern: .minuteSecond)) } ?? "Not yet")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Spacer()
+            Image(systemName: session == nil ? "circle" : "checkmark.circle.fill")
+                .foregroundStyle(session == nil ? Color.secondary : Color.mintDeep)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .companionCard(.compact)

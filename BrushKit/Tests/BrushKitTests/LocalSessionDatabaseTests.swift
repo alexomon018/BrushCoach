@@ -26,6 +26,14 @@ struct LocalSessionDatabaseTests {
                 confidentZoneWindows: 72,
                 zoneAgreement: 0.75,
                 zoneEstimationAttempted: true,
+                zoneDurations: ZoneDurations(
+                    upperLeft: 14,
+                    upperCentre: 18,
+                    upperRight: 20,
+                    lowerLeft: 17,
+                    lowerCentre: 16,
+                    lowerRight: 18
+                ),
                 coveredSeconds: 119,
                 recordingCompleted: true
             ),

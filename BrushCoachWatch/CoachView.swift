@@ -15,7 +15,7 @@ struct CoachView: View {
 
             switch model.phase {
             case .ready:
-                ReadyView(start: model.startSession)
+                ReadyView(tracksZones: model.hasCalibration, start: model.startSession)
             case .countdown(let count):
                 CountdownView(count: count)
             case .brushing, .paused:
@@ -26,7 +26,6 @@ struct CoachView: View {
                 FailureView(message: message, dismiss: model.dismissError)
             }
         }
-        .navigationTitle(navigationTitle)
         .navigationBarBackButtonHidden(model.isBusy)
         .toolbar {
             if case .ready = model.phase {
@@ -52,64 +51,60 @@ struct CoachView: View {
             Button("Discard", role: .destructive) { model.discard() }
             Button("Keep brushing", role: .cancel) {}
         } message: {
-            Text("Finishing keeps credit for the zones you have brushed.")
+            Text("Finishing saves the time and coverage recorded so far.")
         }
         .onReceive(NotificationCenter.default.publisher(for: .brushCoachStartSessionRequested)) { _ in
             model.startSession()
         }
-    }
-
-    private var navigationTitle: String {
-        switch model.phase {
-        case .ready: "BrushCoach"
-        case .brushing: "Zone \(model.currentZoneIndex + 1) of 6"
-        case .paused: "Paused"
-        case .countdown: ""
-        case .completed: "Complete"
-        case .failed: "Session stopped"
-        }
+        // Handedness can be answered on the phone and calibration can be run
+        // from the More screen, so both are re-read when this screen comes back
+        // into view rather than on every render.
+        .onAppear { model.refreshDeviceState() }
     }
 }
 
 private struct ReadyView: View {
+    let tracksZones: Bool
     let start: () -> Void
 
+    /// A scroll view rather than a `ViewThatFits` pair: on the smallest watches
+    /// neither variant really fitted, so the arch and the subtitle were clipped
+    /// against each other instead of the screen simply scrolling.
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            content(compact: false)
-            content(compact: true)
-        }
-        .watchPageFrame(bottom: 0)
-    }
+        ScrollView {
+            VStack(spacing: WatchMetrics.componentSpacing) {
+                WatchDentalArch(completed: 0, active: nil)
+                    .frame(height: 38)
+                    .accessibilityHidden(true)
 
-    private func content(compact: Bool) -> some View {
-        VStack(spacing: compact ? 6 : WatchMetrics.sectionSpacing) {
-            WatchDentalArch(completed: 0, active: nil)
-                .frame(height: compact ? 42 : 54)
-                .accessibilityHidden(true)
+                VStack(spacing: 3) {
+                    Text("Two minutes, your way")
+                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(tracksZones ? "Six areas tracked automatically" : "Brush freely at your own pace")
+                        .font(.caption2)
+                        .foregroundStyle(Color.watchMint)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            VStack(spacing: 2) {
-                Text("Ready for two")
-                    .font(.system(compact ? .headline : .title3, design: .rounded, weight: .bold))
-                    .foregroundStyle(.white)
-                Text("Six 20-sec zones")
-                    .font(.caption2)
-                    .foregroundStyle(Color.watchMint)
-            }
+                Button(action: start) {
+                    Label("Start brushing", systemImage: "play.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .watchPrimaryControl(tint: .watchMint, foreground: .watchInk)
+                .accessibilityHint("Starts a two-minute free-brushing session")
 
-            Button(action: start) {
-                Label("Start brushing", systemImage: "play.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .watchPrimaryControl(tint: .watchMint, foreground: .watchInk)
-            .accessibilityHint("Starts a two-minute guided session")
-
-            if !compact {
                 Text("Soft bristles · gentle pressure")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.56))
+                    .multilineTextAlignment(.center)
             }
+            .watchPageFrame(bottom: 12)
         }
     }
 }
@@ -147,7 +142,6 @@ private struct ActiveBrushView: View {
             VStack(spacing: compact ? 3 : 7) {
                 Spacer(minLength: 0)
                 dial(size: dialSize, compact: compact)
-                ZoneRail(completed: model.currentZoneIndex, active: model.currentZoneIndex)
                 pauseButton
                 if !compact { hint }
                 Spacer(minLength: 0)
@@ -167,25 +161,15 @@ private struct ActiveBrushView: View {
                 .rotationEffect(.degrees(-90))
                 .animation(reduceMotion ? nil : .linear(duration: 0.26), value: model.progress)
             VStack(spacing: -2) {
-                Text(model.zoneSecondsRemaining.formatted())
+                Text(model.secondsRemaining.formatted())
                     .font(.system(size: compact ? 42 : 52, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .minimumScaleFactor(0.75)
-                Text(model.zoneName)
+                Text("KEEP BRUSHING")
                     .font(.system(size: compact ? 9 : 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(1)
-                // Shown only when the calibrated classifier is confident, and
-                // only as a read-out of where it thinks you are — the prompt
-                // above is still what the session is pacing.
-                if let zone = model.liveZone {
-                    Text(zone == model.scheduledZone ? "matches" : zone.displayName.lowercased())
-                        .font(.system(size: compact ? 8 : 9, weight: .medium, design: .rounded))
-                        .foregroundStyle(zone == model.scheduledZone ? Color.watchMint : Color.watchBlue)
-                        .lineLimit(1)
-                        .transition(.opacity)
-                }
             }
         }
         .frame(width: size, height: size)
@@ -196,7 +180,7 @@ private struct ActiveBrushView: View {
 
     private var dialAccessibilityLabel: String {
         let state = model.isPaused ? "Paused. " : ""
-        return "\(state)\(model.zoneName), \(model.zoneSecondsRemaining) seconds remaining"
+        return "\(state)\(model.secondsRemaining) seconds remaining"
     }
 
     private var pauseButton: some View {
@@ -241,38 +225,39 @@ private struct CompletionView: View {
     @Bindable var model: CoachViewModel
     let summary: CoachViewModel.SessionSummary
 
+    /// The summary grows with whatever the session produced — metrics, coverage,
+    /// a sensing note, a next step — so it scrolls rather than trying to squeeze
+    /// every combination onto one screen.
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            content(compact: false)
-            content(compact: true)
+        ScrollView {
+            content
+                .watchPageFrame(bottom: 12)
         }
-        .watchPageFrame(bottom: 0)
     }
 
-    private func content(compact: Bool) -> some View {
-        VStack(spacing: compact ? 5 : 8) {
+    private var content: some View {
+        VStack(spacing: 8) {
             Image(systemName: summary.session.completedRoutine
                   ? "checkmark.circle.fill" : "circle.lefthalf.filled")
-                .font(.system(size: compact ? 28 : 38))
+                .font(.system(size: 38))
                 .foregroundStyle(Color.watchMint)
 
-            Text(summary.session.completedRoutine ? "Clean sweep" : "Partly done")
+            Text(summary.session.completedRoutine ? "Brush complete" : "Session saved")
                 .font(.system(.headline, design: .rounded, weight: .bold))
 
-            HStack(spacing: compact ? 11 : 16) {
+            HStack(spacing: 16) {
                 metric(formattedDuration, "TIME")
-                metric("\(summary.session.zonesCompleted)/\(summary.session.plannedZones)", "ZONES")
                 if let brushed = formattedBrushingTime {
                     metric(brushed, "BRUSHED")
                 }
             }
 
-            if let agreement = formattedAgreement {
-                Text(agreement)
+            if let coverageNote {
+                Text(coverageNote)
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(Color.watchBlue)
-                    .lineLimit(2)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let note = sensingNote {
@@ -280,7 +265,7 @@ private struct CompletionView: View {
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(Color.watchBlue)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let step = nextPendingStep {
@@ -311,19 +296,19 @@ private struct CompletionView: View {
         return Duration.seconds(seconds.rounded()).formatted(.time(pattern: .minuteSecond))
     }
 
-    /// Prompt agreement, not accuracy: it cannot separate "you followed the
-    /// prompt" from "the classifier agrees". Hidden entirely below a handful of
-    /// confident windows, where the ratio would be noise.
-    private var formattedAgreement: String? {
-        guard let analysis = summary.session.analysis, analysis.zoneEstimationAttempted else { return nil }
-        guard analysis.confidentZoneWindows >= 5, let agreement = analysis.zoneAgreement else {
-            // Calibrated, but nothing was confident enough to report. Saying so
-            // is the difference between a feature that looks broken and one the
-            // user understands is being cautious.
-            return "No confident zone reads · experimental"
+    private var coverageNote: String? {
+        guard summary.capability == .available else { return nil }
+        guard let analysis = summary.session.analysis else { return nil }
+        guard analysis.zoneEstimationAttempted else {
+            return "Calibrate zones to unlock your iPhone mouth map."
         }
-        let percent = (agreement * 100).formatted(.number.precision(.fractionLength(0)))
-        return "\(percent)% prompt agreement · experimental"
+        guard analysis.hasUsableZoneCoverage(forSessionLasting: summary.session.duration) else {
+            return "Not enough confident zone time for a reliable mouth map."
+        }
+        let count = analysis.underBrushedZones.count
+        return count == 0
+            ? "Balanced coverage · see the mouth map on iPhone"
+            : "\(count) area\(count == 1 ? "" : "s") need more time · see iPhone"
     }
 
     /// Explains a missing brushing time rather than leaving a silent gap.
@@ -385,19 +370,13 @@ private struct WatchMoreView: View {
 
     var body: some View {
         List {
-            Section("Technique") {
-                Label("Fluoride toothpaste", systemImage: "drop.fill")
-                Label("Soft bristles", systemImage: "leaf.fill")
-                Label("Gentle pressure", systemImage: "hand.raised.fill")
-                Label("45° to gumline", systemImage: "angle")
-            }
-            Section("Stroke checking") {
+            Section("Zone mapping") {
                 NavigationLink {
                     CalibrationView()
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(model.hasCalibration ? "Recalibrate" : "Calibrate zones")
-                        Text(model.hasCalibration ? "Experimental · already set up" : "Experimental · about 3 minutes")
+                        Text(model.hasCalibration ? "Ready for mouth maps" : "About 3 minutes")
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                     }
@@ -417,26 +396,8 @@ private struct WatchMoreView: View {
         .scrollContentBackground(.hidden)
         .background(Color.watchInk.ignoresSafeArea())
         .tint(Color.watchMint)
-    }
-}
-
-private struct ZoneRail: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let completed: Int
-    let active: Int
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<6, id: \.self) { index in
-                Capsule()
-                    .fill(index < completed ? Color.watchMint : index == active ? Color.watchBlue : .white.opacity(0.14))
-                    .frame(height: index == active ? 8 : 6)
-                    .scaleEffect(index == active ? 1 : 0.88)
-            }
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.65), value: active)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Zone \(active + 1) of 6")
+        // Picks up a profile written by the calibration screen this pushed to.
+        .onAppear { model.refreshDeviceState() }
     }
 }
 
